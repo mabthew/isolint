@@ -1,0 +1,11 @@
+src/
+test/
+bin/
+tsconfig.json
+tsconfig.test.json
+.gitignore
+*.md
+!README.md
+.claude/
+roadmap.md
+benchmark-report.md

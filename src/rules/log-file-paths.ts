@@ -1,0 +1,86 @@
+import { Rule, Finding, FileContext, LangPatternSet, lineNumberAt } from '../types.js';
+import { ecosystemForExtension } from '../lang/index.js';
+
+/** Universal log file path patterns. */
+const LOG_FILE_PATTERNS = [
+  { regex: /(?:logFile|log_file|logPath|log_path)\s*[:=]\s*["']([^"']+\.log)["']/gi, desc: 'Hardcoded log file path' },
+  { regex: /(?:>|>>)\s*["']?(\/[^\s"']+\.log)["']?/g, desc: 'Shell redirect to log file' }, // require absolute path to avoid console.log
+  { regex: /logging\.FileHandler\(\s*["']([^"']+\.log)["']/g, desc: 'Python FileHandler with hardcoded log path' },
+];
+
+export const logFilePathsRule: Rule = {
+  id: 'log-file-paths',
+  name: 'Log File Paths',
+  category: 'log-file-path',
+  description: 'Detects hardcoded log file paths that would be overwritten by parallel worktrees',
+  defaultSeverity: 'low',
+  filePatterns: ['**/*'],
+  detect(file: FileContext, langPatterns: LangPatternSet[]): Finding[] {
+    const findings: Finding[] = [];
+
+    // 1. Universal log file patterns
+    for (const { regex, desc } of LOG_FILE_PATTERNS) {
+      const re = new RegExp(regex.source, regex.flags);
+      let match: RegExpExecArray | null;
+      while ((match = re.exec(file.content)) !== null) {
+        const logPath = match[1];
+        const lineNum = lineNumberAt(file.lineOffsets, match.index);
+        const lineContent = file.lines[lineNum - 1] || '';
+        const trimmedLine = lineContent.trim();
+
+        // Skip comments
+        if (trimmedLine.startsWith('//') || trimmedLine.startsWith('#') || trimmedLine.startsWith('*')) continue;
+
+        // Skip if already using env var
+        if (logPath.includes('${') || lineContent.includes('process.env') || lineContent.includes('os.environ')) continue;
+
+        findings.push({
+          ruleId: 'log-file-paths/hardcoded',
+          category: 'log-file-path',
+          severity: 'low',
+          filePath: file.filePath,
+          line: lineNum,
+          column: match.index - file.content.lastIndexOf('\n', match.index - 1),
+          matchedText: match[0],
+          message: `${desc}: ${logPath}`,
+          context: trimmedLine,
+          suggestedFix: {
+            description: 'Namespace log file per worktree',
+            replacement: match[0].replace(logPath, logPath.replace('.log', '.${WORKTREE_ID}.log')),
+            confidence: 'review',
+          },
+        });
+      }
+    }
+
+    // 2. Ecosystem-specific log patterns
+    const eco = ecosystemForExtension(file.extension);
+    for (const ps of langPatterns) {
+      for (const patDef of ps.logPathPatterns) {
+        const regex = new RegExp(patDef.pattern.source, patDef.pattern.flags);
+        let match: RegExpExecArray | null;
+        while ((match = regex.exec(file.content)) !== null) {
+          const lineNum = lineNumberAt(file.lineOffsets, match.index);
+          const lineContent = file.lines[lineNum - 1] || '';
+
+          if (findings.some(f => f.line === lineNum && f.filePath === file.filePath)) continue;
+
+          findings.push({
+            ruleId: `log-file-paths/${ps.ecosystem}`,
+            category: 'log-file-path',
+            severity: 'low',
+            filePath: file.filePath,
+            line: lineNum,
+            column: match.index - file.content.lastIndexOf('\n', match.index - 1),
+            matchedText: match[0],
+            message: `${patDef.description}`,
+            context: lineContent.trim(),
+            ecosystem: ps.ecosystem,
+          });
+        }
+      }
+    }
+
+    return findings;
+  },
+};

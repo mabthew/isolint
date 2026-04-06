@@ -1,0 +1,16 @@
+version: "3.8"
+services:
+  web:
+    container_name: myapp-web
+    build: .
+    ports:
+      - "3000:3000"
+      - "9229:9229"
+  db:
+    container_name: myapp-db
+    image: postgres:16
+    ports:
+      - "5432:5432"
+networks:
+  default:
+    name: myapp-network
