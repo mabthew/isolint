@@ -19,7 +19,7 @@ export function createCli(): Command {
 
   program
     .name('parallel-dev-audit')
-    .description('Scan repos for hardcoded values that break parallel development workflows')
+    .description('Scan repos for hardcoded values that break parallel development workflows\n\nExit codes:\n  0  No findings above --fail-on threshold\n  1  Findings at or above --fail-on threshold\n  2  Error (invalid args, scan failure)')
     .version('0.1.0')
     .argument('[path]', 'Path to repo root', '.')
     .option('-s, --suggest', 'Show suggested fixes inline with findings')
