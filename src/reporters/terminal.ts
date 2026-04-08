@@ -33,24 +33,28 @@ function scoreGrade(score: number): string {
   return 'F';
 }
 
-export function formatTerminalReport(report: AuditReport, showFixes: boolean): string {
+export function formatTerminalReport(report: AuditReport, showFixes: boolean, quiet?: boolean): string {
   const lines: string[] = [];
 
-  // Header
-  lines.push('');
-  lines.push(pc.bold('parallel-dev-audit') + ` — ${report.repoPath}`);
-  lines.push(pc.dim(`Scanned ${report.filesScanned} files in ${report.duration}ms`));
+  // Header (suppressed in quiet mode)
+  if (!quiet) {
+    lines.push('');
+    lines.push(pc.bold('parallel-dev-audit') + ` — ${report.repoPath}`);
+    lines.push(pc.dim(`Scanned ${report.filesScanned} files in ${report.duration}ms`));
 
-  // Detected ecosystems
-  if (report.repoProfile.ecosystems.length > 0 && report.repoProfile.ecosystems[0] !== 'unknown') {
-    lines.push(pc.dim(`Ecosystems: ${report.repoProfile.ecosystems.join(', ')}`));
+    // Detected ecosystems
+    if (report.repoProfile.ecosystems.length > 0 && report.repoProfile.ecosystems[0] !== 'unknown') {
+      lines.push(pc.dim(`Ecosystems: ${report.repoProfile.ecosystems.join(', ')}`));
+    }
+    lines.push('');
   }
-  lines.push('');
 
   if (report.findings.length === 0) {
-    lines.push(scoreColor(100)(pc.bold('  Parallel Dev Readiness: 100/100 (A+)')));
-    lines.push(pc.green('  No parallel-incompatible patterns found.'));
-    lines.push('');
+    if (!quiet) {
+      lines.push(scoreColor(100)(pc.bold('  Parallel Dev Readiness: 100/100 (A+)')));
+      lines.push(pc.green('  No parallel-incompatible patterns found.'));
+      lines.push('');
+    }
     return lines.join('\n');
   }
 
@@ -112,37 +116,38 @@ export function formatTerminalReport(report: AuditReport, showFixes: boolean): s
     renderFindingGroup(report.findings);
   }
 
-  // Score with visual bar
-  const grade = scoreGrade(report.score);
-  const colorFn = scoreColor(report.score);
-  const barFilled = Math.round(report.score / 5);
-  const barEmpty = 20 - barFilled;
-  const bar = colorFn('█'.repeat(barFilled)) + pc.dim('░'.repeat(barEmpty));
-  lines.push(`${bar} ${colorFn(pc.bold(`${report.score}/100 (${grade})`))}`);
-  lines.push('');
+  // Footer: score + summary (suppressed in quiet mode)
+  if (!quiet) {
+    const grade = scoreGrade(report.score);
+    const colorFn = scoreColor(report.score);
+    const barFilled = Math.round(report.score / 5);
+    const barEmpty = 20 - barFilled;
+    const bar = colorFn('█'.repeat(barFilled)) + pc.dim('░'.repeat(barEmpty));
+    lines.push(`${bar} ${colorFn(pc.bold(`${report.score}/100 (${grade})`))}`);
+    lines.push('');
 
-  // Summary
-  lines.push(pc.bold('Summary'));
-  for (const s of report.summary) {
-    const parts: string[] = [];
-    for (const [sev, count] of Object.entries(s.bySeverity)) {
-      const color = SEVERITY_COLORS[sev as Severity];
-      parts.push(color(`${count} ${sev}`));
+    lines.push(pc.bold('Summary'));
+    for (const s of report.summary) {
+      const parts: string[] = [];
+      for (const [sev, count] of Object.entries(s.bySeverity)) {
+        const color = SEVERITY_COLORS[sev as Severity];
+        parts.push(color(`${count} ${sev}`));
+      }
+      lines.push(`  ${s.category}: ${s.count} findings (${parts.join(', ')})`);
     }
-    lines.push(`  ${s.category}: ${s.count} findings (${parts.join(', ')})`);
-  }
 
-  lines.push('');
-  const critCount = report.findings.filter(f => f.severity === 'critical').length;
-  const highCount = report.findings.filter(f => f.severity === 'high').length;
-  if (critCount > 0) {
-    lines.push(pc.red(`  ${critCount} critical issue${critCount > 1 ? 's' : ''} — these WILL break parallel development`));
+    lines.push('');
+    const critCount = report.findings.filter(f => f.severity === 'critical').length;
+    const highCount = report.findings.filter(f => f.severity === 'high').length;
+    if (critCount > 0) {
+      lines.push(pc.red(`  ${critCount} critical issue${critCount > 1 ? 's' : ''} — these WILL break parallel development`));
+    }
+    if (highCount > 0) {
+      lines.push(pc.yellow(`  ${highCount} high severity issue${highCount > 1 ? 's' : ''} — likely to cause conflicts`));
+    }
+    lines.push(pc.dim(`  Total: ${report.findingsCount} findings`));
+    lines.push('');
   }
-  if (highCount > 0) {
-    lines.push(pc.yellow(`  ${highCount} high severity issue${highCount > 1 ? 's' : ''} — likely to cause conflicts`));
-  }
-  lines.push(pc.dim(`  Total: ${report.findingsCount} findings`));
-  lines.push('');
 
   return lines.join('\n');
 }

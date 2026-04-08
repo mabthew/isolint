@@ -99,7 +99,7 @@ export function createCli(): Command {
         } else if (config.format === 'markdown' || config.format === 'report') {
           console.log(formatMarkdownReport(report));
         } else {
-          console.log(formatTerminalReport(report, showSuggestions));
+          console.log(formatTerminalReport(report, showSuggestions, opts.quiet as boolean));
         }
 
         // Interactive fix mode
