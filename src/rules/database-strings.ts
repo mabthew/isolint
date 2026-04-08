@@ -31,7 +31,16 @@ export const databaseStringsRule: Rule = {
 
       const protocol = match[1];
       const severity = file.basename.startsWith('.env') ? 'high' : 'critical';
-      const eco = ecosystemForExtension(file.extension);
+      let eco = ecosystemForExtension(file.extension);
+      // For config/YAML files, check if any ecosystem claims this file via configFileGlobs
+      if (eco === 'unknown') {
+        for (const ps of langPatterns) {
+          if (ps.configFileGlobs.some(g => file.filePath.endsWith(g.replace('*', '')) || file.basename === g)) {
+            eco = ps.ecosystem;
+            break;
+          }
+        }
+      }
 
       // Find ecosystem-specific fix template
       const fixTemplate = langPatterns

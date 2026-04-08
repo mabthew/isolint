@@ -76,10 +76,11 @@ export async function runAudit(config: AuditConfig): Promise<AuditReport> {
       // Filter out ignored lines
       const filtered = ruleFindings.filter(f => !ignoredLines.has(f.line));
 
-      // Downgrade findings in documentation and test files
+      // Downgrade findings in documentation files and remove fix suggestions
       if (isDocFile(filePath)) {
         for (const f of filtered) {
           f.severity = 'info';
+          delete f.suggestedFix;
         }
       } else if (isTestFile(filePath)) {
         for (const f of filtered) {
