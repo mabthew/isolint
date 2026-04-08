@@ -51,7 +51,7 @@ export function loadConfig(rootDir: string, cliConfig: Partial<AuditConfig>): Au
 }
 
 const INIT_CONFIG = `# parallel-dev-audit configuration
-# See: https://github.com/TODO/parallel-dev-audit
+# See: https://github.com/mabthew/parallel-dev-audit
 
 # Minimum severity to report: critical, high, medium, low, info
 # severity: medium

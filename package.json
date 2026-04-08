@@ -41,11 +41,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/TODO/parallel-dev-audit.git"
+    "url": "https://github.com/mabthew/parallel-dev-audit.git"
   },
-  "homepage": "https://github.com/TODO/parallel-dev-audit#readme",
+  "homepage": "https://github.com/mabthew/parallel-dev-audit#readme",
   "bugs": {
-    "url": "https://github.com/TODO/parallel-dev-audit/issues"
+    "url": "https://github.com/mabthew/parallel-dev-audit/issues"
   },
   "publishConfig": {
     "access": "public"
