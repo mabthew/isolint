@@ -6,6 +6,14 @@ Scan repos for hardcoded values that break parallel development workflows — gi
 
 Parallel development (git worktrees, multiple branches running simultaneously, AI agents coding in parallel) breaks when repos have hardcoded ports, absolute paths, Docker container names, and database URLs. **parallel-dev-audit** finds these issues before they bite.
 
+## Security & Privacy
+
+- **Runs 100% locally** — no network calls, no telemetry, no data collection
+- **Respects `.gitignore`** — files your repo ignores are never read
+- **Skips binaries and secrets** — `.env` files are excluded from all detection rules (they're environment variables by definition). Binary files, media, archives, and lock files are skipped entirely
+- **Path traversal protection** — the scanner verifies all file paths resolve within the target directory
+- **Read-only by default** — only `--fix` modifies files, and it creates backups first
+
 ## Install
 
 ```bash
@@ -35,31 +43,66 @@ parallel-dev-audit . --format json
 
 ```
 parallel-dev-audit — /path/to/repo
-Scanned 42 files in 18ms
+Scanned 5 files in 26ms
 Ecosystems: node
 
-Code Issues (5)
-
-.env
-  CRIT 1:1  Hardcoded port 3000 in PORT — will conflict across worktrees
-  CRIT 2:1  Hardcoded postgresql connection string — database name should be per-worktree
+config.ts
+  CRIT 3:12  Hardcoded user home directory path: /Users/mabthew/projects/myapp/data/db.sqlite
+       dbPath: '/Users/mabthew/projects/myapp/data/db.sqlite',
+  HIGH 2:3   Port assignment with hardcoded value: port 8080
+       port: 8080,
 
 docker-compose.yml
-  HIGH 4:5  Fixed container_name "myapp-web" — will conflict across worktrees
-  CRIT 7:1  Fixed Docker port mapping 3000:3000 — host port will conflict
+  CRIT 7:1   Fixed Docker port mapping 3000:3000 — host port will conflict
+       - "3000:3000"
+  HIGH 4:1   Fixed container_name "myapp-web" — will conflict across worktrees
+       container_name: myapp-web
 
+server.ts
+  HIGH 4:4   Server .listen() with hardcoded port: port 3000
+       app.listen(3000, () => {
+
+█████████████░░░░░░░ 66/100 (D)
+
+Summary
+  hardcoded-port: 6 findings (3 critical, 3 high)
+  docker-conflict: 3 findings (2 high, 1 medium)
+  absolute-path: 1 findings (1 critical)
+  Total: 12 findings
+```
+
+### With `--suggest`
+
+```
 config.ts
-  CRIT 3:12 Hardcoded user home directory path: /Users/matt/projects/app
+  HIGH 2:3   Port assignment with hardcoded value: port 8080
+       port: 8080,
+       fix (needs review): Use process.env.PORT with fallback
+       → parseInt(process.env.PORT || '8080', 10)
 
-████████████████░░░░ 72/100 (C)
+docker-compose.yml
+  CRIT 7:1   Fixed Docker port mapping 3000:3000 — host port will conflict
+       - "3000:3000"
+       fix (needs review): Use variable interpolation for host port
+       →       - "${HOST_PORT:-3000}:3000"
+  HIGH 4:1   Fixed container_name "myapp-web" — will conflict across worktrees
+       container_name: myapp-web
+       fix (needs review): Use COMPOSE_PROJECT_NAME or variable interpolation
+       →     container_name: "${COMPOSE_PROJECT_NAME:-myapp-web}-myapp-web"
+
+server.ts
+  HIGH 4:4   Server .listen() with hardcoded port: port 3000
+       app.listen(3000, () => {
+       fix (needs review): Use process.env.PORT with fallback
+       → parseInt(process.env.PORT || '3000', 10)
 ```
 
 ## What It Detects
 
 | Category | Severity | Example |
 |---|---|---|
-| **Hardcoded ports** | critical/high | `PORT=3000`, `app.listen(3000)`, Docker port mappings |
-| **Absolute paths** | critical | `/Users/matt/projects/...`, `/home/deploy/...` |
+| **Hardcoded ports** | critical/high | `app.listen(3000)`, Docker port mappings |
+| **Absolute paths** | critical | `/Users/mabthew/projects/...`, `/home/deploy/...` |
 | **Docker conflicts** | high/medium | Fixed `container_name`, network names |
 | **Database strings** | critical/high | `postgresql://localhost:5432/mydb` |
 | **Build directories** | medium/high | Hardcoded `outDir`, Rust `target/` without `CARGO_TARGET_DIR` |
@@ -93,6 +136,8 @@ Options:
   -V, --version              Show version
   -h, --help                 Show help
 ```
+
+Exit codes: `0` = no findings above threshold, `1` = findings found, `2` = configuration error.
 
 ## Configuration
 
@@ -129,8 +174,6 @@ app.listen(3000);
 app.listen(8080); // pda-ignore
 ```
 
-Legacy forms `// worktree-audit-ignore-next-line` and `// wta-ignore` are also supported.
-
 ## CI Integration
 
 ```yaml
@@ -138,8 +181,6 @@ Legacy forms `// worktree-audit-ignore-next-line` and `// wta-ignore` are also s
 - name: Parallel Dev Audit
   run: npx parallel-dev-audit . --format json --fail-on high
 ```
-
-Exit codes: `0` = no findings above threshold, `1` = findings found, `2` = configuration error.
 
 ## Programmatic API
 

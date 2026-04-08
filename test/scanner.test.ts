@@ -40,6 +40,55 @@ describe('scanner — discoverFiles', () => {
     assert.ok(files.length > 0, 'should find files when no custom ignores');
   });
 
+  it('respects .gitignore', async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pda-gitignore-'));
+    try {
+      fs.writeFileSync(path.join(tmpDir, '.gitignore'), 'secret.ts\nlogs/\n*.generated.js\n');
+      fs.writeFileSync(path.join(tmpDir, 'app.ts'), 'const x = 1;');
+      fs.writeFileSync(path.join(tmpDir, 'secret.ts'), 'const key = "abc";');
+      fs.writeFileSync(path.join(tmpDir, 'utils.generated.js'), 'var x = 1;');
+      fs.mkdirSync(path.join(tmpDir, 'logs'));
+      fs.writeFileSync(path.join(tmpDir, 'logs', 'app.log.ts'), 'log');
+      fs.mkdirSync(path.join(tmpDir, 'src'));
+      fs.writeFileSync(path.join(tmpDir, 'src', 'index.ts'), 'ok');
+
+      const config: AuditConfig = {
+        rootDir: tmpDir,
+        suggest: false, fix: false, dryRun: false,
+        format: 'terminal', ignorePatterns: [],
+        respectGitignore: true, maxFileSize: 1_048_576,
+      };
+      const files = await discoverFiles(config);
+      assert.ok(files.includes('app.ts'), 'should find non-ignored files');
+      assert.ok(files.includes('src/index.ts'), 'should find files in non-ignored dirs');
+      assert.ok(!files.includes('secret.ts'), 'should skip gitignored file');
+      assert.ok(!files.includes('utils.generated.js'), 'should skip gitignored glob pattern');
+      assert.ok(!files.some(f => f.startsWith('logs/')), 'should skip gitignored directory');
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('skips .gitignore when respectGitignore is false', async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pda-noignore-'));
+    try {
+      fs.writeFileSync(path.join(tmpDir, '.gitignore'), 'secret.ts\n');
+      fs.writeFileSync(path.join(tmpDir, 'app.ts'), 'const x = 1;');
+      fs.writeFileSync(path.join(tmpDir, 'secret.ts'), 'const key = "abc";');
+
+      const config: AuditConfig = {
+        rootDir: tmpDir,
+        suggest: false, fix: false, dryRun: false,
+        format: 'terminal', ignorePatterns: [],
+        respectGitignore: false, maxFileSize: 1_048_576,
+      };
+      const files = await discoverFiles(config);
+      assert.ok(files.includes('secret.ts'), 'should NOT skip gitignored file when disabled');
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
   it('skips symlinks', async () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wta-test-'));
     try {
