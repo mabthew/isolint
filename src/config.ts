@@ -13,6 +13,8 @@ interface ConfigFile {
 
 const CONFIG_FILENAMES = ['.parallel-dev-audit.yml', '.parallel-dev-audit.yaml', '.worktree-audit.yml', '.worktree-audit.yaml'];
 
+const VALID_CONFIG_KEYS = new Set(['severity', 'failOn', 'categories', 'ignore', 'maxFileSize']);
+
 /** Load config from .parallel-dev-audit.yml (or legacy .worktree-audit.yml). CLI flags take precedence. */
 export function loadConfig(rootDir: string, cliConfig: Partial<AuditConfig>): AuditConfig {
   let fileConfig: ConfigFile = {};
@@ -24,6 +26,12 @@ export function loadConfig(rootDir: string, cliConfig: Partial<AuditConfig>): Au
       const parsed = parseYamlConfig(content);
       if (parsed && typeof parsed === 'object') {
         fileConfig = parsed as ConfigFile;
+        // Warn on unknown keys
+        for (const key of Object.keys(parsed as Record<string, unknown>)) {
+          if (!VALID_CONFIG_KEYS.has(key)) {
+            console.error(`Warning: unknown config key "${key}" in ${name} — ignored`);
+          }
+        }
       } else {
         console.error(`Warning: ${name} exists but could not be parsed — using defaults`);
       }
