@@ -49,5 +49,15 @@ export const rubyPatterns: LangPatternSet = {
       envVarPattern: "ENV.fetch('PORT', $ORIGINAL)",
       description: "Use ENV.fetch('PORT') with fallback",
     },
+    'database-string': {
+      sourcePattern: '$DB_URL',
+      envVarPattern: "ENV.fetch('DATABASE_URL')",
+      description: "Use ENV.fetch('DATABASE_URL')",
+    },
+    'absolute-path': {
+      sourcePattern: '$PATH',
+      envVarPattern: "Rails.root.join('$RELATIVE')",
+      description: 'Use Rails.root.join with relative path',
+    },
   },
 };

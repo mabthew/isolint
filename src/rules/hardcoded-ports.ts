@@ -126,6 +126,11 @@ export const hardcodedPortsRule: Rule = {
       if (lineContent.includes('process.env') || lineContent.includes('os.environ') ||
           lineContent.includes('os.Getenv') || lineContent.includes('${')) continue;
 
+      // Find ecosystem-specific fix template for the port
+      const fixTemplate = relevantPatterns.length > 0
+        ? relevantPatterns[0].fixTemplates['hardcoded-port']
+        : undefined;
+
       findings.push({
         ruleId: 'hardcoded-ports/localhost',
         category: 'hardcoded-port',
@@ -137,6 +142,13 @@ export const hardcodedPortsRule: Rule = {
         message: `Hardcoded localhost URL with port ${port}`,
         context: lineContent.trim(),
         ecosystem: eco !== 'unknown' ? eco : undefined,
+        suggestedFix: fixTemplate
+          ? {
+              description: fixTemplate.description,
+              replacement: fixTemplate.envVarPattern.replace('$ORIGINAL', String(port)),
+              confidence: 'review',
+            }
+          : undefined,
       });
     }
 

@@ -33,5 +33,15 @@ export const rustPatterns: LangPatternSet = {
       envVarPattern: 'std::env::var("PORT").unwrap_or_else(|_| "$ORIGINAL".to_string())',
       description: 'Use std::env::var with fallback',
     },
+    'database-string': {
+      sourcePattern: '$DB_URL',
+      envVarPattern: 'std::env::var("DATABASE_URL").expect("DATABASE_URL must be set")',
+      description: 'Use std::env::var("DATABASE_URL")',
+    },
+    'absolute-path': {
+      sourcePattern: '$PATH',
+      envVarPattern: 'PathBuf::from("$RELATIVE")',
+      description: 'Use PathBuf with relative path',
+    },
   },
 };

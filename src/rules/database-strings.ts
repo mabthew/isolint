@@ -31,6 +31,19 @@ export const databaseStringsRule: Rule = {
 
       const protocol = match[1];
       const severity = file.basename.startsWith('.env') ? 'high' : 'critical';
+      const eco = ecosystemForExtension(file.extension);
+
+      // Find ecosystem-specific fix template
+      const fixTemplate = langPatterns
+        .find(p => p.ecosystem === eco)
+        ?.fixTemplates['database-string'];
+
+      const replacement = fixTemplate
+        ? fixTemplate.envVarPattern.replace('$ORIGINAL', url.length > 80 ? url.slice(0, 77) + '...' : url)
+        : 'process.env.DATABASE_URL';
+      const fixDescription = fixTemplate
+        ? fixTemplate.description
+        : 'Use an environment variable for the database URL';
 
       findings.push({
         ruleId: 'database-strings/url',
@@ -42,9 +55,10 @@ export const databaseStringsRule: Rule = {
         matchedText: url.length > 80 ? url.slice(0, 77) + '...' : url,
         message: `Hardcoded ${protocol} connection string — database name should be per-worktree`,
         context: trimmedLine.length > 120 ? trimmedLine.slice(0, 117) + '...' : trimmedLine,
+        ecosystem: eco !== 'unknown' ? eco : undefined,
         suggestedFix: {
-          description: 'Use an environment variable for the database URL',
-          replacement: 'process.env.DATABASE_URL',
+          description: fixDescription,
+          replacement,
           confidence: 'review',
         },
       });

@@ -1,5 +1,6 @@
 import { Rule, Finding, FileContext, LangPatternSet, lineNumberAt } from '../types.js';
 import { HARDCODED_PATH_PREFIXES, SAFE_PATH_PREFIXES } from '../lang/patterns.js';
+import { ecosystemForExtension } from '../lang/index.js';
 
 /** Match absolute paths that look like user home directories or project roots. */
 const USER_HOME_PATTERN = /(?:\/Users\/\w+|\/home\/\w+|C:\\Users\\\w+)(?:[/\\][^\s"'`,:;)}\]]+)+/g;
@@ -17,7 +18,7 @@ export const absolutePathsRule: Rule = {
   description: 'Detects hardcoded absolute paths (enlistment roots, user home dirs) that break on other machines or worktrees',
   defaultSeverity: 'critical',
   filePatterns: ['**/*'],
-  detect(file: FileContext, _langPatterns: LangPatternSet[]): Finding[] {
+  detect(file: FileContext, langPatterns: LangPatternSet[]): Finding[] {
     const findings: Finding[] = [];
 
     // Skip binary-looking content
@@ -48,6 +49,19 @@ export const absolutePathsRule: Rule = {
           continue;
         }
 
+        const eco = ecosystemForExtension(file.extension);
+        const relativePath = suggestRelativePath(matchedPath);
+        const fixTemplate = langPatterns
+          .find(p => p.ecosystem === eco)
+          ?.fixTemplates['absolute-path'];
+
+        const replacement = fixTemplate
+          ? fixTemplate.envVarPattern.replace('$RELATIVE', relativePath)
+          : `path.resolve(__dirname, '${relativePath}')`;
+        const fixDescription = fixTemplate
+          ? fixTemplate.description
+          : 'Use a relative path or environment variable';
+
         findings.push({
           ruleId: 'absolute-paths/enlistment',
           category: 'absolute-path',
@@ -58,9 +72,10 @@ export const absolutePathsRule: Rule = {
           matchedText: matchedPath,
           message: `${desc}: ${matchedPath}`,
           context: lineContent.trim(),
+          ecosystem: eco !== 'unknown' ? eco : undefined,
           suggestedFix: {
-            description: 'Use a relative path or environment variable',
-            replacement: `path.resolve(__dirname, '${suggestRelativePath(matchedPath)}')`,
+            description: fixDescription,
+            replacement,
             confidence: 'manual',
           },
         });

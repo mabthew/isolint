@@ -45,5 +45,15 @@ export const dotnetPatterns: LangPatternSet = {
       envVarPattern: 'Environment.GetEnvironmentVariable("PORT") ?? "$ORIGINAL"',
       description: 'Use Environment.GetEnvironmentVariable with fallback',
     },
+    'database-string': {
+      sourcePattern: '$DB_URL',
+      envVarPattern: 'Configuration.GetConnectionString("DefaultConnection")',
+      description: 'Use IConfiguration.GetConnectionString',
+    },
+    'absolute-path': {
+      sourcePattern: '$PATH',
+      envVarPattern: 'Path.Combine(AppContext.BaseDirectory, "$RELATIVE")',
+      description: 'Use Path.Combine with AppContext.BaseDirectory',
+    },
   },
 };

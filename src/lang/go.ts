@@ -30,8 +30,18 @@ export const goPatterns: LangPatternSet = {
   fixTemplates: {
     'hardcoded-port': {
       sourcePattern: '$PORT',
-      envVarPattern: 'os.Getenv("PORT")',
+      envVarPattern: 'os.Getenv("PORT") /* default: $ORIGINAL */',
       description: 'Use os.Getenv with fallback',
+    },
+    'database-string': {
+      sourcePattern: '$DB_URL',
+      envVarPattern: 'os.Getenv("DATABASE_URL")',
+      description: 'Use os.Getenv("DATABASE_URL")',
+    },
+    'absolute-path': {
+      sourcePattern: '$PATH',
+      envVarPattern: 'filepath.Join(".", "$RELATIVE")',
+      description: 'Use filepath.Join with relative path',
     },
   },
 };

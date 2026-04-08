@@ -58,5 +58,10 @@ export const nodePatterns: LangPatternSet = {
       envVarPattern: "process.env.DATABASE_URL || '$ORIGINAL'",
       description: 'Use process.env.DATABASE_URL with fallback',
     },
+    'absolute-path': {
+      sourcePattern: '$PATH',
+      envVarPattern: "path.resolve(__dirname, '$RELATIVE')",
+      description: 'Use path.resolve with __dirname',
+    },
   },
 };

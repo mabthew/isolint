@@ -46,8 +46,18 @@ export const pythonPatterns: LangPatternSet = {
   fixTemplates: {
     'hardcoded-port': {
       sourcePattern: '$PORT',
-      envVarPattern: "int(os.environ.get('PORT', '$ORIGINAL'))",
+      envVarPattern: "int(os.environ.get('PORT', $ORIGINAL))",
       description: 'Use os.environ.get with fallback',
+    },
+    'database-string': {
+      sourcePattern: '$DB_URL',
+      envVarPattern: "os.environ.get('DATABASE_URL', '$ORIGINAL')",
+      description: "Use os.environ.get('DATABASE_URL')",
+    },
+    'absolute-path': {
+      sourcePattern: '$PATH',
+      envVarPattern: "Path('$RELATIVE')",
+      description: 'Use pathlib.Path with relative path',
     },
   },
 };

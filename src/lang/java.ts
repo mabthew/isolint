@@ -52,5 +52,15 @@ export const javaPatterns: LangPatternSet = {
       envVarPattern: '${server.port:$ORIGINAL}',
       description: 'Use Spring property placeholder with default',
     },
+    'database-string': {
+      sourcePattern: '$DB_URL',
+      envVarPattern: '${DATABASE_URL}',
+      description: 'Use Spring property placeholder for DB URL',
+    },
+    'absolute-path': {
+      sourcePattern: '$PATH',
+      envVarPattern: 'Paths.get("$RELATIVE")',
+      description: 'Use Paths.get with relative path',
+    },
   },
 };
