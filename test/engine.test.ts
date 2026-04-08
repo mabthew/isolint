@@ -1,6 +1,8 @@
 import { describe, it } from 'node:test';
 import * as assert from 'node:assert/strict';
 import * as path from 'node:path';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
 import { runAudit } from '../src/engine.js';
 import { AuditConfig } from '../src/types.js';
 
@@ -83,6 +85,51 @@ describe('engine — runAudit', () => {
     const report = await runAudit(makeConfig('sample-app', { categories: ['hardcoded-port'] }));
     for (const f of report.findings) {
       assert.equal(f.category, 'hardcoded-port');
+    }
+  });
+
+  it('skips findings inside multi-line /* */ comments', async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pda-multiline-'));
+    try {
+      fs.writeFileSync(path.join(tmpDir, 'package.json'), '{}');
+      fs.writeFileSync(path.join(tmpDir, 'server.ts'), [
+        'const app = express();',
+        '/*',
+        '  app.listen(3000);',
+        '  const db = "postgresql://localhost:5432/mydb";',
+        '*/',
+        'app.listen(8080);',
+      ].join('\n'));
+
+      const report = await runAudit(makeConfig(tmpDir));
+      const portFindings = report.findings.filter(f => f.category === 'hardcoded-port');
+      // Should find port 8080 on line 6 but NOT port 3000 on line 3
+      assert.ok(portFindings.some(f => f.line === 6), 'should find port outside comment block');
+      assert.ok(!portFindings.some(f => f.line === 3), 'should skip port inside /* */ block');
+      // DB URL on line 4 should also be skipped
+      const dbFindings = report.findings.filter(f => f.category === 'database-string');
+      assert.ok(!dbFindings.some(f => f.line === 4), 'should skip DB URL inside /* */ block');
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('handles single-line /* */ comments correctly', async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pda-slcomment-'));
+    try {
+      fs.writeFileSync(path.join(tmpDir, 'package.json'), '{}');
+      fs.writeFileSync(path.join(tmpDir, 'server.ts'), [
+        '/* app.listen(3000); */',
+        'app.listen(8080);',
+      ].join('\n'));
+
+      const report = await runAudit(makeConfig(tmpDir));
+      const portFindings = report.findings.filter(f => f.category === 'hardcoded-port');
+      // Line 1 has a single-line block comment — rules already handle // but not /* */
+      // Line 2 should be found
+      assert.ok(portFindings.some(f => f.line === 2), 'should find port on line 2');
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
     }
   });
 });

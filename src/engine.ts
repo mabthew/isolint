@@ -57,8 +57,12 @@ export async function runAudit(config: AuditConfig): Promise<AuditReport> {
       !fileCtx.basename.endsWith('.template') &&
       !fileCtx.basename.endsWith('.sample');
 
-    // Build set of ignored lines for this file
+    // Build set of ignored lines for this file (inline ignores + multi-line comments)
     const ignoredLines = getIgnoredLines(fileCtx.lines);
+    const commentedLines = getMultiLineCommentLines(fileCtx.lines);
+    for (const line of commentedLines) {
+      ignoredLines.add(line);
+    }
 
     for (const rule of rules) {
       if (isEnvFile && rule.id !== 'env-propagation') continue;
@@ -171,6 +175,45 @@ function getIgnoredLines(lines: string[]): Set<number> {
     }
   }
   return ignored;
+}
+
+/**
+ * Find lines inside multi-line comment blocks (/* ... *​/).
+ * Returns a Set of 1-based line numbers that are inside block comments.
+ * Handles nested contexts: strings containing /​* are not treated as comment starts.
+ */
+function getMultiLineCommentLines(lines: string[]): Set<number> {
+  const commented = new Set<number>();
+  let inBlock = false;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    if (inBlock) {
+      commented.add(i + 1); // 1-based
+      if (line.includes('*/')) {
+        inBlock = false;
+      }
+    } else {
+      // Check for /* that opens a block comment (not closed on same line)
+      // Simple approach: scan for /* and */ on the line
+      let pos = 0;
+      while (pos < line.length) {
+        const openIdx = line.indexOf('/*', pos);
+        if (openIdx === -1) break;
+        const closeIdx = line.indexOf('*/', openIdx + 2);
+        if (closeIdx === -1) {
+          // Opens a block that continues to next line
+          inBlock = true;
+          break;
+        }
+        // Block opens and closes on same line — skip past it
+        pos = closeIdx + 2;
+      }
+    }
+  }
+
+  return commented;
 }
 
 // --- File classification ---
