@@ -1,6 +1,6 @@
 // Programmatic API
 export { runAudit } from './engine.js';
-export { applyFixes } from './fixer.js';
+export { applyFixes, interactiveFix } from './fixer.js';
 export { detectEcosystems, getPatternSets } from './lang/index.js';
 export { getAllRules } from './rules/index.js';
 export { lineNumberAt } from './types.js';
