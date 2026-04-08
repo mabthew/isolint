@@ -89,6 +89,58 @@ describe('scanner — discoverFiles', () => {
     }
   });
 
+  it('supports file glob patterns in ignore', async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pda-glob-'));
+    try {
+      fs.writeFileSync(path.join(tmpDir, 'app.ts'), 'const x = 1;');
+      fs.writeFileSync(path.join(tmpDir, 'app.test.ts'), 'test code');
+      fs.writeFileSync(path.join(tmpDir, 'app.spec.ts'), 'spec code');
+      fs.writeFileSync(path.join(tmpDir, 'utils.generated.ts'), 'generated');
+      fs.writeFileSync(path.join(tmpDir, 'data.min.js'), 'minified');
+
+      const config: AuditConfig = {
+        rootDir: tmpDir,
+        suggest: false, fix: false, dryRun: false,
+        format: 'terminal',
+        ignorePatterns: ['*.test.ts', '*.spec.ts', '*.generated.*', '*.min.js'],
+        respectGitignore: false, maxFileSize: 1_048_576,
+      };
+      const files = await discoverFiles(config);
+      assert.ok(files.includes('app.ts'), 'should find non-ignored files');
+      assert.ok(!files.includes('app.test.ts'), 'should skip *.test.ts');
+      assert.ok(!files.includes('app.spec.ts'), 'should skip *.spec.ts');
+      assert.ok(!files.includes('utils.generated.ts'), 'should skip *.generated.*');
+      assert.ok(!files.includes('data.min.js'), 'should skip *.min.js');
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('glob ignore works on nested paths', async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pda-glob2-'));
+    try {
+      fs.mkdirSync(path.join(tmpDir, 'src'));
+      fs.writeFileSync(path.join(tmpDir, 'src', 'app.ts'), 'const x = 1;');
+      fs.writeFileSync(path.join(tmpDir, 'src', 'app.test.ts'), 'test');
+      fs.mkdirSync(path.join(tmpDir, 'src', 'utils'));
+      fs.writeFileSync(path.join(tmpDir, 'src', 'utils', 'helper.test.ts'), 'test');
+
+      const config: AuditConfig = {
+        rootDir: tmpDir,
+        suggest: false, fix: false, dryRun: false,
+        format: 'terminal',
+        ignorePatterns: ['*.test.ts'],
+        respectGitignore: false, maxFileSize: 1_048_576,
+      };
+      const files = await discoverFiles(config);
+      assert.ok(files.includes('src/app.ts'), 'should find non-test file');
+      assert.ok(!files.includes('src/app.test.ts'), 'should skip test file in subdir');
+      assert.ok(!files.includes('src/utils/helper.test.ts'), 'should skip test file in nested subdir');
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
   it('skips symlinks', async () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wta-test-'));
     try {

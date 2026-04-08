@@ -102,13 +102,64 @@ function loadGitignore(rootDir: string): Array<{ pattern: RegExp; negated: boole
   }
 }
 
+/**
+ * Convert a simple glob pattern to a RegExp for file matching.
+ * Supports: *, **, ?, and brace-less patterns.
+ */
+function globToRegExp(pattern: string): RegExp | null {
+  try {
+    let regex = pattern
+      .replace(/\./g, '\\.')           // escape dots
+      .replace(/\*\*/g, '\0')          // placeholder for **
+      .replace(/\*/g, '[^/]*')         // * = anything except /
+      .replace(/\?/g, '[^/]')          // ? = single char except /
+      .replace(/\0/g, '.*');           // ** = anything including /
+    // If pattern has no slash, match against basename anywhere
+    if (!pattern.includes('/')) {
+      regex = `(?:^|/)${regex}$`;
+    } else {
+      regex = `^${regex}$`;
+    }
+    return new RegExp(regex);
+  } catch {
+    return null;
+  }
+}
+
+/** Check if a relative path or basename matches any custom ignore pattern. */
+function matchesCustomIgnore(
+  relativePath: string,
+  basename: string,
+  dirIgnores: Set<string>,
+  fileGlobs: RegExp[],
+): boolean {
+  // Check exact directory name match (legacy behavior)
+  if (dirIgnores.has(basename) || dirIgnores.has(`${basename}/`)) return true;
+  // Check glob patterns against relative path
+  for (const re of fileGlobs) {
+    if (re.test(relativePath) || re.test(basename)) return true;
+  }
+  return false;
+}
+
 /** Discover all scannable files in the repo using recursive readdir. */
 export async function discoverFiles(config: AuditConfig): Promise<string[]> {
   const files: string[] = [];
-  const customIgnores = new Set(config.ignorePatterns);
   const gitignoreMatchers = config.respectGitignore !== false
     ? loadGitignore(config.rootDir)
     : [];
+
+  // Split ignore patterns into simple dir names and glob patterns
+  const dirIgnores = new Set<string>();
+  const fileGlobs: RegExp[] = [];
+  for (const pattern of config.ignorePatterns) {
+    if (pattern.includes('*') || pattern.includes('?') || pattern.includes('.')) {
+      const re = globToRegExp(pattern);
+      if (re) fileGlobs.push(re);
+    } else {
+      dirIgnores.add(pattern);
+    }
+  }
 
   function walk(dir: string, relativeBase: string) {
     let entries: fs.Dirent[];
@@ -127,12 +178,13 @@ export async function discoverFiles(config: AuditConfig): Promise<string[]> {
 
       if (entry.isDirectory()) {
         if (SKIP_DIRS.has(name)) continue;
-        if (customIgnores.has(name) || customIgnores.has(`${name}/`)) continue;
+        if (matchesCustomIgnore(relativePath, name, dirIgnores, fileGlobs)) continue;
         if (gitignoreMatchers.length > 0 && isGitignored(relativePath, gitignoreMatchers)) continue;
         walk(path.join(dir, name), relativePath);
       } else if (entry.isFile()) {
         const ext = path.extname(name).toLowerCase();
         if (BINARY_EXTENSIONS.has(ext)) continue;
+        if (matchesCustomIgnore(relativePath, name, dirIgnores, fileGlobs)) continue;
         if (gitignoreMatchers.length > 0 && isGitignored(relativePath, gitignoreMatchers)) continue;
         files.push(relativePath);
       }
