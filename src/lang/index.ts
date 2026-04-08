@@ -8,6 +8,11 @@ import { rustPatterns } from './rust.js';
 import { dotnetPatterns } from './dotnet.js';
 import { javaPatterns } from './java.js';
 import { rubyPatterns } from './ruby.js';
+import { phpPatterns } from './php.js';
+import { elixirPatterns } from './elixir.js';
+import { swiftPatterns } from './swift.js';
+import { zigPatterns } from './zig.js';
+import { cppPatterns } from './cpp.js';
 
 const ECOSYSTEM_MARKERS: Record<Ecosystem, string[]> = {
   node: ['package.json', 'tsconfig.json', 'deno.json'],
@@ -17,6 +22,11 @@ const ECOSYSTEM_MARKERS: Record<Ecosystem, string[]> = {
   dotnet: ['*.csproj', '*.sln', 'global.json'],
   java: ['pom.xml', 'build.gradle', 'build.gradle.kts'],
   ruby: ['Gemfile', 'Rakefile', 'config.ru'],
+  php: ['composer.json', 'artisan', 'composer.lock'],
+  elixir: ['mix.exs', 'mix.lock'],
+  swift: ['Package.swift', '*.xcodeproj', '*.xcworkspace'],
+  zig: ['build.zig', 'build.zig.zon'],
+  cpp: ['CMakeLists.txt', 'Makefile', '*.vcxproj', 'meson.build', 'conanfile.txt'],
   unknown: [],
 };
 
@@ -28,6 +38,11 @@ const PATTERN_SETS: Record<Ecosystem, LangPatternSet | null> = {
   dotnet: dotnetPatterns,
   java: javaPatterns,
   ruby: rubyPatterns,
+  php: phpPatterns,
+  elixir: elixirPatterns,
+  swift: swiftPatterns,
+  zig: zigPatterns,
+  cpp: cppPatterns,
   unknown: null,
 };
 

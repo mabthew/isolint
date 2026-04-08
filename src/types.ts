@@ -19,6 +19,11 @@ export type Ecosystem =
   | 'java'
   | 'ruby'
   | 'python'
+  | 'php'
+  | 'elixir'
+  | 'swift'
+  | 'zig'
+  | 'cpp'
   | 'unknown';
 
 export type FixConfidence = 'auto' | 'review' | 'manual';
