@@ -41,7 +41,7 @@ describe('scanner — discoverFiles', () => {
   });
 
   it('respects .gitignore', async () => {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pda-gitignore-'));
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'iso-gitignore-'));
     try {
       fs.writeFileSync(path.join(tmpDir, '.gitignore'), 'secret.ts\nlogs/\n*.generated.js\n');
       fs.writeFileSync(path.join(tmpDir, 'app.ts'), 'const x = 1;');
@@ -70,7 +70,7 @@ describe('scanner — discoverFiles', () => {
   });
 
   it('skips .gitignore when respectGitignore is false', async () => {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pda-noignore-'));
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'iso-noignore-'));
     try {
       fs.writeFileSync(path.join(tmpDir, '.gitignore'), 'secret.ts\n');
       fs.writeFileSync(path.join(tmpDir, 'app.ts'), 'const x = 1;');
@@ -90,7 +90,7 @@ describe('scanner — discoverFiles', () => {
   });
 
   it('supports file glob patterns in ignore', async () => {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pda-glob-'));
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'iso-glob-'));
     try {
       fs.writeFileSync(path.join(tmpDir, 'app.ts'), 'const x = 1;');
       fs.writeFileSync(path.join(tmpDir, 'app.test.ts'), 'test code');
@@ -117,7 +117,7 @@ describe('scanner — discoverFiles', () => {
   });
 
   it('glob ignore works on nested paths', async () => {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pda-glob2-'));
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'iso-glob2-'));
     try {
       fs.mkdirSync(path.join(tmpDir, 'src'));
       fs.writeFileSync(path.join(tmpDir, 'src', 'app.ts'), 'const x = 1;');

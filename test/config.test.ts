@@ -7,10 +7,10 @@ import { loadConfig } from '../src/config.js';
 
 describe('config — loadConfig', () => {
   it('warns on unknown config keys', async () => {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pda-config-'));
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'iso-config-'));
     try {
       fs.writeFileSync(
-        path.join(tmpDir, '.parallel-dev-audit.yml'),
+        path.join(tmpDir, '.isolint.yml'),
         'severity: high\ncategorys: [hardcoded-port]\ntypo_key: true\n'
       );
 
@@ -41,10 +41,10 @@ describe('config — loadConfig', () => {
   });
 
   it('loads valid config without warnings', async () => {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pda-config2-'));
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'iso-config2-'));
     try {
       fs.writeFileSync(
-        path.join(tmpDir, '.parallel-dev-audit.yml'),
+        path.join(tmpDir, '.isolint.yml'),
         'severity: medium\nignore:\n  - "*.test.ts"\nmaxFileSize: 500000\n'
       );
 

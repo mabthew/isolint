@@ -134,10 +134,13 @@ export async function runAudit(config: AuditConfig): Promise<AuditReport> {
 // --- Inline ignore support ---
 
 const IGNORE_PATTERNS = [
+  'isolint-ignore-next-line',
+  'isolint-ignore',
+  'iso-ignore',
+  // Legacy aliases
   'parallel-dev-audit-ignore-next-line',
   'parallel-dev-audit-ignore',
   'pda-ignore',
-  // Legacy aliases
   'worktree-audit-ignore-next-line',
   'worktree-audit-ignore',
   'wta-ignore',
@@ -146,10 +149,10 @@ const IGNORE_PATTERNS = [
 /**
  * Scan lines for ignore comments. Returns a Set of 1-based line numbers to skip.
  * Supports:
- *   // parallel-dev-audit-ignore-next-line  (skips next line)
- *   // parallel-dev-audit-ignore            (skips current line if inline, next if on own line)
- *   // pda-ignore                           (short form)
- *   // wta-ignore                           (legacy alias)
+ *   // isolint-ignore-next-line             (skips next line)
+ *   // isolint-ignore                       (skips current line if inline, next if on own line)
+ *   // iso-ignore                           (short form)
+ *   // pda-ignore, wta-ignore               (legacy aliases)
  */
 function getIgnoredLines(lines: string[]): Set<number> {
   const ignored = new Set<number>();

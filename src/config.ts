@@ -11,11 +11,11 @@ interface ConfigFile {
   maxFileSize?: number;
 }
 
-const CONFIG_FILENAMES = ['.parallel-dev-audit.yml', '.parallel-dev-audit.yaml', '.worktree-audit.yml', '.worktree-audit.yaml'];
+const CONFIG_FILENAMES = ['.isolint.yml', '.isolint.yaml', '.parallel-dev-audit.yml', '.parallel-dev-audit.yaml', '.worktree-audit.yml', '.worktree-audit.yaml'];
 
 const VALID_CONFIG_KEYS = new Set(['severity', 'failOn', 'categories', 'ignore', 'maxFileSize']);
 
-/** Load config from .parallel-dev-audit.yml (or legacy .worktree-audit.yml). CLI flags take precedence. */
+/** Load config from .isolint.yml (or legacy .parallel-dev-audit.yml / .worktree-audit.yml). CLI flags take precedence. */
 export function loadConfig(rootDir: string, cliConfig: Partial<AuditConfig>): AuditConfig {
   let fileConfig: ConfigFile = {};
 
@@ -58,8 +58,8 @@ export function loadConfig(rootDir: string, cliConfig: Partial<AuditConfig>): Au
   };
 }
 
-const INIT_CONFIG = `# parallel-dev-audit configuration
-# See: https://github.com/mabthew/parallel-dev-audit
+const INIT_CONFIG = `# isolint configuration
+# See: https://github.com/mabthew/isolint
 
 # Minimum severity to report: critical, high, medium, low, info
 # severity: medium
@@ -90,7 +90,7 @@ ignore:
 
 /** Create a starter config file. */
 export function initConfig(rootDir: string): string {
-  const configPath = path.join(rootDir, '.parallel-dev-audit.yml');
+  const configPath = path.join(rootDir, '.isolint.yml');
   if (fs.existsSync(configPath)) {
     return `Config already exists: ${configPath}`;
   }

@@ -11,15 +11,15 @@ Scan this repository for hardcoded values that break parallel workflows (git wor
 
 ## Step 1: Run the audit
 
-Run parallel-dev-audit on the target path. Use the project's own built CLI if available, otherwise use npx.
+Run isolint on the target path. Use the project's own built CLI if available, otherwise use npx.
 
 ```!
-if [ -f "dist/bin/parallel-dev-audit.js" ]; then
-  node dist/bin/parallel-dev-audit.js ${0:-.} --suggest --format json 2>/dev/null
-elif command -v parallel-dev-audit &>/dev/null; then
-  parallel-dev-audit ${0:-.} --suggest --format json 2>/dev/null
+if [ -f "dist/bin/isolint.js" ]; then
+  node dist/bin/isolint.js ${0:-.} --suggest --format json 2>/dev/null
+elif command -v isolint &>/dev/null; then
+  isolint ${0:-.} --suggest --format json 2>/dev/null
 else
-  npx -y parallel-dev-audit ${0:-.} --suggest --format json 2>/dev/null
+  npx -y isolint ${0:-.} --suggest --format json 2>/dev/null
 fi
 ```
 
@@ -58,7 +58,7 @@ If the user chooses option 2 (walk through), for each fixable finding:
 
 After fixes are applied (or if the user declines), provide actionable next steps:
 
-- If score >= 90: "This repo is ready for parallel development. Consider adding `parallel-dev-audit --fail-on high` to your CI pipeline to keep it that way."
+- If score >= 90: "This repo is ready for parallel development. Consider adding `isolint --fail-on high` to your CI pipeline to keep it that way."
 - If score 70-89: "A few issues to clean up. The main blockers are [top category]. Focus on those first."
 - If score < 70: "This repo needs work before parallel development is safe. Start with the critical findings — those will cause immediate conflicts."
 

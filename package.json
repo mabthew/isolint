@@ -1,11 +1,11 @@
 {
-  "name": "parallel-dev-audit",
+  "name": "isolint",
   "version": "0.1.0",
   "description": "Scan repos for hardcoded values that break parallel worktree workflows",
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
   "bin": {
-    "parallel-dev-audit": "dist/bin/parallel-dev-audit.js"
+    "isolint": "dist/bin/isolint.js"
   },
   "files": [
     "dist/src/",
@@ -17,7 +17,7 @@
     "build": "tsc",
     "build:test": "tsc -p tsconfig.test.json",
     "dev": "tsc --watch",
-    "start": "node dist/bin/parallel-dev-audit.js",
+    "start": "node dist/bin/isolint.js",
     "pretest": "tsc -p tsconfig.test.json",
     "test": "node --test dist/test/*.test.js dist/test/rules/*.test.js",
     "prepublishOnly": "npm run build"
@@ -41,11 +41,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/mabthew/parallel-dev-audit.git"
+    "url": "https://github.com/mabthew/isolint.git"
   },
-  "homepage": "https://github.com/mabthew/parallel-dev-audit#readme",
+  "homepage": "https://github.com/mabthew/isolint#readme",
   "bugs": {
-    "url": "https://github.com/mabthew/parallel-dev-audit/issues"
+    "url": "https://github.com/mabthew/isolint/issues"
   },
   "publishConfig": {
     "access": "public"

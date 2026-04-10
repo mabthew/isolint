@@ -89,7 +89,7 @@ describe('engine — runAudit', () => {
   });
 
   it('skips findings inside multi-line /* */ comments', async () => {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pda-multiline-'));
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'iso-multiline-'));
     try {
       fs.writeFileSync(path.join(tmpDir, 'package.json'), '{}');
       fs.writeFileSync(path.join(tmpDir, 'server.ts'), [
@@ -115,7 +115,7 @@ describe('engine — runAudit', () => {
   });
 
   it('handles single-line /* */ comments correctly', async () => {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pda-slcomment-'));
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'iso-slcomment-'));
     try {
       fs.writeFileSync(path.join(tmpDir, 'package.json'), '{}');
       fs.writeFileSync(path.join(tmpDir, 'server.ts'), [

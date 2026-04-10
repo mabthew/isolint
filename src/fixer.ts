@@ -77,7 +77,7 @@ export function applyFixes(
 
       if (!options.dryRun && result.applied > 0) {
         // Backup original
-        const backupDir = path.join(report.repoPath, '.parallel-dev-audit-backup');
+        const backupDir = path.join(report.repoPath, '.isolint-backup');
         const backupPath = path.join(backupDir, filePath);
         fs.mkdirSync(path.dirname(backupPath), { recursive: true });
         fs.copyFileSync(absPath, backupPath);

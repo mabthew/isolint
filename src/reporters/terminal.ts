@@ -39,7 +39,7 @@ export function formatTerminalReport(report: AuditReport, showFixes: boolean, qu
   // Header (suppressed in quiet mode)
   if (!quiet) {
     lines.push('');
-    lines.push(pc.bold('parallel-dev-audit') + ` — ${report.repoPath}`);
+    lines.push(pc.bold('isolint') + ` — ${report.repoPath}`);
     lines.push(pc.dim(`Scanned ${report.filesScanned} files in ${report.duration}ms`));
 
     // Detected ecosystems

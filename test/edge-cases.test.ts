@@ -23,7 +23,7 @@ function makeConfig(rootDir: string, overrides: Partial<AuditConfig> = {}): Audi
 
 describe('edge cases — empty repo', () => {
   it('handles empty directory gracefully', async () => {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pda-empty-'));
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'iso-empty-'));
     try {
       const files = await discoverFiles(makeConfig(tmpDir));
       assert.equal(files.length, 0, 'empty dir should have no files');
@@ -38,7 +38,7 @@ describe('edge cases — empty repo', () => {
   });
 
   it('handles directory with only subdirectories (no files)', async () => {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pda-dirsonly-'));
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'iso-dirsonly-'));
     try {
       fs.mkdirSync(path.join(tmpDir, 'src'));
       fs.mkdirSync(path.join(tmpDir, 'lib'));
@@ -56,7 +56,7 @@ describe('edge cases — empty repo', () => {
 
 describe('edge cases — binary-only repo', () => {
   it('skips all binary files and reports clean', async () => {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pda-binary-'));
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'iso-binary-'));
     try {
       // Create binary files with various extensions
       fs.writeFileSync(path.join(tmpDir, 'image.png'), Buffer.from([0x89, 0x50, 0x4E, 0x47]));
@@ -79,7 +79,7 @@ describe('edge cases — binary-only repo', () => {
 
 describe('edge cases — no trailing newline', () => {
   it('handles file without trailing newline', () => {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pda-nonl-'));
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'iso-nonl-'));
     try {
       // Write file with no trailing newline containing a hardcoded port
       fs.writeFileSync(path.join(tmpDir, 'server.ts'), 'app.listen(3000)');
@@ -94,7 +94,7 @@ describe('edge cases — no trailing newline', () => {
   });
 
   it('detects findings in files without trailing newline', async () => {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pda-nonl2-'));
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'iso-nonl2-'));
     try {
       fs.writeFileSync(path.join(tmpDir, 'package.json'), '{}');
       fs.writeFileSync(path.join(tmpDir, 'server.ts'), 'app.listen(3000)');
@@ -110,7 +110,7 @@ describe('edge cases — no trailing newline', () => {
 
 describe('edge cases — unicode filenames', () => {
   it('discovers files with unicode names', async () => {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pda-unicode-'));
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'iso-unicode-'));
     try {
       fs.writeFileSync(path.join(tmpDir, 'café.ts'), 'const x = 1;');
       fs.writeFileSync(path.join(tmpDir, '日本語.ts'), 'const y = 2;');
@@ -126,7 +126,7 @@ describe('edge cases — unicode filenames', () => {
   });
 
   it('reads and scans files with unicode names', async () => {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pda-unicode2-'));
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'iso-unicode2-'));
     try {
       fs.writeFileSync(path.join(tmpDir, 'package.json'), '{}');
       fs.writeFileSync(path.join(tmpDir, 'сервер.ts'), 'app.listen(3000);');
@@ -142,7 +142,7 @@ describe('edge cases — unicode filenames', () => {
 
 describe('edge cases — zero-byte files', () => {
   it('handles zero-byte files without errors', () => {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pda-zero-'));
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'iso-zero-'));
     try {
       fs.writeFileSync(path.join(tmpDir, 'empty.ts'), '');
 
@@ -157,7 +157,7 @@ describe('edge cases — zero-byte files', () => {
   });
 
   it('zero-byte files produce no findings', async () => {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pda-zero2-'));
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'iso-zero2-'));
     try {
       fs.writeFileSync(path.join(tmpDir, 'package.json'), '{}');
       fs.writeFileSync(path.join(tmpDir, 'empty.ts'), '');
@@ -173,7 +173,7 @@ describe('edge cases — zero-byte files', () => {
 
 describe('edge cases — unicode content', () => {
   it('handles unicode content in source files', async () => {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pda-ucontent-'));
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'iso-ucontent-'));
     try {
       fs.writeFileSync(path.join(tmpDir, 'package.json'), '{}');
       // Source with unicode comments/strings + a real finding
@@ -195,7 +195,7 @@ describe('edge cases — unicode content', () => {
 
 describe('edge cases — deeply nested dirs', () => {
   it('discovers files in deeply nested directories', async () => {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pda-deep-'));
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'iso-deep-'));
     try {
       const deepPath = path.join(tmpDir, 'a', 'b', 'c', 'd', 'e', 'f');
       fs.mkdirSync(deepPath, { recursive: true });
@@ -214,7 +214,7 @@ describe('edge cases — deeply nested dirs', () => {
 
 describe('edge cases — files at max size limit', () => {
   it('skips files exceeding maxFileSize', () => {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pda-maxsize-'));
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'iso-maxsize-'));
     try {
       // Create file just over the limit (set a small limit for testing)
       fs.writeFileSync(path.join(tmpDir, 'big.ts'), 'x'.repeat(1000));

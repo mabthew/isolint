@@ -18,7 +18,7 @@ export function createCli(): Command {
   const program = new Command();
 
   program
-    .name('parallel-dev-audit')
+    .name('isolint')
     .description('Scan repos for hardcoded values that break parallel development workflows\n\nExit codes:\n  0  No findings above --fail-on threshold\n  1  Findings at or above --fail-on threshold\n  2  Error (invalid args, scan failure)')
     .version('0.1.0')
     .argument('[path]', 'Path to repo root', '.')
@@ -32,7 +32,7 @@ export function createCli(): Command {
     .option('--category <cats>', 'Only check specific categories (comma-separated)')
     .option('--ignore <patterns>', 'Additional ignore globs (comma-separated)')
     .option('--max-file-size <bytes>', 'Skip files larger than this (default: 1MB)')
-    .option('--init', 'Create starter .parallel-dev-audit.yml config file')
+    .option('--init', 'Create starter .isolint.yml config file')
     .option('-q, --quiet', 'Findings only, no header/footer')
     .option('-v, --verbose', 'Show scan progress and detected ecosystems')
     .action(async (targetPath: string, opts: Record<string, unknown>) => {
