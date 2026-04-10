@@ -40,9 +40,10 @@ export const tempDirectoriesRule: Rule = {
           message: `${desc}: ${match[1] || match[0]}`,
           context: trimmedLine,
           suggestedFix: {
-            description: 'Include worktree/branch identifier in temp path',
-            replacement: match[0].replace(match[1], `${match[1]}-\${WORKTREE_ID}`),
+            description: 'Two worktrees using the same temp dir will overwrite each other\'s files',
+            replacement: match[0].replace(match[1], `${match[1]}-\$(basename $PWD)`),
             confidence: 'review',
+            docUrl: 'https://isolint.dev/docs/rules/temp-directories',
           },
         });
       }

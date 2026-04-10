@@ -34,9 +34,10 @@ export const dockerConflictsRule: Rule = {
         message: `Fixed container_name "${name}" — will conflict across worktrees`,
         context: file.lines[lineNum - 1]?.trim() || match[0].trim(),
         suggestedFix: {
-          description: 'Use COMPOSE_PROJECT_NAME or variable interpolation',
+          description: 'Two worktrees running the same container_name will conflict — use COMPOSE_PROJECT_NAME to namespace',
           replacement: `    container_name: "\${COMPOSE_PROJECT_NAME:-${name}}-${name}"`,
           confidence: 'review',
+          docUrl: 'https://isolint.dev/docs/rules/docker-conflicts',
         },
       });
     }
@@ -66,9 +67,10 @@ export const dockerConflictsRule: Rule = {
           message: `Fixed network name "${name}" — may conflict across worktrees`,
           context: file.lines[lineNum - 1]?.trim() || match[0].trim(),
           suggestedFix: {
-            description: 'Use variable interpolation for network name',
+            description: 'Fixed network names will collide when multiple worktrees run Docker Compose',
             replacement: `    name: "\${COMPOSE_PROJECT_NAME:-default}-${name}"`,
             confidence: 'review',
+            docUrl: 'https://isolint.dev/docs/rules/docker-conflicts',
           },
         });
       }

@@ -77,6 +77,8 @@ export const absolutePathsRule: Rule = {
             description: fixDescription,
             replacement,
             confidence: 'manual',
+            howToApply: 'Replace with a relative path or environment variable so it works in any worktree location',
+            docUrl: 'https://isolint.dev/docs/rules/absolute-paths',
           },
         });
       }

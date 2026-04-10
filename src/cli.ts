@@ -33,6 +33,7 @@ export function createCli(): Command {
     .option('--ignore <patterns>', 'Additional ignore globs (comma-separated)')
     .option('--max-file-size <bytes>', 'Skip files larger than this (default: 1MB)')
     .option('--init', 'Create starter .isolint.yml config file')
+    .option('--include-docs [exts]', 'Include doc/template files (default: skip). Optionally specify extensions: .md,.txt')
     .option('-q, --quiet', 'Findings only, no header/footer')
     .option('-v, --verbose', 'Show scan progress and detected ecosystems')
     .action(async (targetPath: string, opts: Record<string, unknown>) => {
@@ -85,6 +86,11 @@ export function createCli(): Command {
         ignorePatterns: opts.ignore ? (opts.ignore as string).split(',').map(p => p.trim()) : [],
         maxFileSize: opts.maxFileSize ? parseInt(opts.maxFileSize as string, 10) : undefined,
         verbose: opts.verbose as boolean | undefined,
+        includeDocs: opts.includeDocs === true
+          ? true  // --include-docs with no argument = include all
+          : typeof opts.includeDocs === 'string'
+            ? (opts.includeDocs as string).split(',').map(e => e.trim().startsWith('.') ? e.trim() : '.' + e.trim())
+            : undefined,
       });
 
       try {
@@ -99,7 +105,7 @@ export function createCli(): Command {
         } else if (config.format === 'markdown' || config.format === 'report') {
           console.log(formatMarkdownReport(report));
         } else {
-          console.log(formatTerminalReport(report, showSuggestions, opts.quiet as boolean));
+          console.log(formatTerminalReport(report, showSuggestions, opts.quiet as boolean, opts.verbose as boolean));
         }
 
         // Interactive fix mode

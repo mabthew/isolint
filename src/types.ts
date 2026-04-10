@@ -46,6 +46,8 @@ export interface SuggestedFix {
   description: string;
   replacement: string;
   confidence: FixConfidence;
+  howToApply?: string;
+  docUrl?: string;
 }
 
 export interface PatternDef {
@@ -154,4 +156,6 @@ export interface AuditConfig {
   respectGitignore: boolean;
   maxFileSize: number;
   verbose?: boolean;
+  /** Include doc/template files. true = all, string[] = specific extensions (e.g. ['.md', '.txt']) */
+  includeDocs?: true | string[];
 }

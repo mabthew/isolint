@@ -45,9 +45,10 @@ export const logFilePathsRule: Rule = {
           message: `${desc}: ${logPath}`,
           context: trimmedLine,
           suggestedFix: {
-            description: 'Namespace log file per worktree',
-            replacement: match[0].replace(logPath, logPath.replace('.log', '.${WORKTREE_ID}.log')),
+            description: 'Parallel worktrees writing to the same log file will interleave output, making logs unreadable',
+            replacement: match[0].replace(logPath, logPath.replace('.log', '.$(basename $PWD).log')),
             confidence: 'review',
+            docUrl: 'https://isolint.dev/docs/rules/log-file-paths',
           },
         });
       }
@@ -76,6 +77,12 @@ export const logFilePathsRule: Rule = {
             message: `${patDef.description}`,
             context: lineContent.trim(),
             ecosystem: ps.ecosystem,
+            suggestedFix: {
+              description: 'Parallel worktrees writing to the same log file will interleave output',
+              replacement: match[0].replace(/\.log\b/, '.$(basename $PWD).log'),
+              confidence: 'review',
+              docUrl: 'https://isolint.dev/docs/rules/log-file-paths',
+            },
           });
         }
       }

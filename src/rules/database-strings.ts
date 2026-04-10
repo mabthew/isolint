@@ -69,6 +69,7 @@ export const databaseStringsRule: Rule = {
           description: fixDescription,
           replacement,
           confidence: 'review',
+          docUrl: 'https://isolint.dev/docs/rules/database-strings',
         },
       });
     }
@@ -90,6 +91,7 @@ export const databaseStringsRule: Rule = {
           // Skip if already using env var
           if (lineContent.includes('${') || lineContent.includes('process.env') || lineContent.includes('os.environ')) continue;
 
+          const ecoFixTemplate = ps.fixTemplates['database-string'];
           findings.push({
             ruleId: `database-strings/${ps.ecosystem}`,
             category: 'database-string',
@@ -101,6 +103,14 @@ export const databaseStringsRule: Rule = {
             message: `${patDef.description}`,
             context: lineContent.trim(),
             ecosystem: ps.ecosystem,
+            suggestedFix: {
+              description: ecoFixTemplate?.description || 'Use an environment variable for the database connection string',
+              replacement: ecoFixTemplate
+                ? ecoFixTemplate.envVarPattern.replace('$ORIGINAL', match[0].length > 80 ? match[0].slice(0, 77) + '...' : match[0])
+                : 'process.env.DATABASE_URL',
+              confidence: 'review',
+              docUrl: 'https://isolint.dev/docs/rules/database-strings',
+            },
           });
         }
       }

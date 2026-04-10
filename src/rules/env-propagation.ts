@@ -45,9 +45,11 @@ export const envPropagationRule: Rule = {
         message: `.env is gitignored — new worktrees won't have environment variables. ${envExampleExists ? 'Use .env.example as template.' : 'Consider adding .env.example.'}`,
         context: file.lines[(lineNum || 1) - 1]?.trim() || '.env',
         suggestedFix: {
-          description: 'Add a worktree hook to copy .env.example to .env on worktree creation',
-          replacement: 'cp .env.example .env  # in your worktree create hook',
+          description: 'New worktrees won\'t have .env. Add a post-checkout hook or setup script to copy .env.example automatically.',
+          replacement: 'cp .env.example .env',
           confidence: 'manual',
+          howToApply: 'Add to .git/hooks/post-checkout: if [ "$3" = "1" ]; then cp .env.example .env; fi',
+          docUrl: 'https://isolint.dev/docs/rules/env-propagation',
         },
       });
     }

@@ -57,6 +57,21 @@ export async function runAudit(config: AuditConfig): Promise<AuditReport> {
       !fileCtx.basename.endsWith('.template') &&
       !fileCtx.basename.endsWith('.sample');
 
+    // Skip template env files and documentation files by default — these contain
+    // example/instructional values, not runtime config. Use --include-docs to override.
+    const isTemplateEnvFile = fileCtx.basename.startsWith('.env') &&
+      (fileCtx.basename.endsWith('.example') || fileCtx.basename.endsWith('.template') || fileCtx.basename.endsWith('.sample'));
+    const isDoc = isDocFile(filePath);
+    if (isTemplateEnvFile || isDoc) {
+      if (!config.includeDocs) continue;
+      // includeDocs is a list of extensions — check if this file matches
+      if (Array.isArray(config.includeDocs)) {
+        const ext = filePath.slice(filePath.lastIndexOf('.'));
+        if (!config.includeDocs.includes(ext)) continue;
+      }
+      // includeDocs === true means include all
+    }
+
     // Build set of ignored lines for this file (inline ignores + multi-line comments)
     const ignoredLines = getIgnoredLines(fileCtx.lines);
     const commentedLines = getMultiLineCommentLines(fileCtx.lines);
@@ -76,8 +91,8 @@ export async function runAudit(config: AuditConfig): Promise<AuditReport> {
       // Filter out ignored lines
       const filtered = ruleFindings.filter(f => !ignoredLines.has(f.line));
 
-      // Downgrade findings in documentation files and remove fix suggestions
-      if (isDocFile(filePath)) {
+      // Downgrade doc/template files to info when included via --include-docs
+      if (isDoc || isTemplateEnvFile) {
         for (const f of filtered) {
           f.severity = 'info';
           delete f.suggestedFix;

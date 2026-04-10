@@ -51,26 +51,41 @@ export function detectEcosystems(rootDir: string): RepoProfile {
   const ecosystems: Ecosystem[] = [];
   const markers: Partial<Record<Ecosystem, string[]>> = {};
 
+  // Collect directories to search: root + one level of subdirectories (for monorepos)
+  const searchDirs = [rootDir];
+  try {
+    const entries = fs.readdirSync(rootDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isDirectory() && !entry.name.startsWith('.') && entry.name !== 'node_modules' && entry.name !== 'vendor') {
+        searchDirs.push(path.join(rootDir, entry.name));
+      }
+    }
+  } catch { /* root doesn't exist */ }
+
   for (const [eco, markerFiles] of Object.entries(ECOSYSTEM_MARKERS)) {
     if (eco === 'unknown') continue;
     const found: string[] = [];
     for (const marker of markerFiles) {
-      if (marker.includes('*')) {
-        // Glob-style marker — check if any matching file exists
-        const ext = marker.replace('*', '');
-        try {
-          const entries = fs.readdirSync(rootDir);
-          for (const entry of entries) {
-            if (entry.endsWith(ext)) {
-              found.push(entry);
-              break;
+      for (const dir of searchDirs) {
+        if (found.length > 0) break;
+        const relPrefix = dir === rootDir ? '' : path.basename(dir) + '/';
+        if (marker.includes('*')) {
+          // Glob-style marker — check if any matching file exists
+          const ext = marker.replace('*', '');
+          try {
+            const entries = fs.readdirSync(dir);
+            for (const entry of entries) {
+              if (entry.endsWith(ext)) {
+                found.push(relPrefix + entry);
+                break;
+              }
             }
+          } catch { /* directory doesn't exist */ }
+        } else {
+          const fullPath = path.join(dir, marker);
+          if (fs.existsSync(fullPath)) {
+            found.push(relPrefix + marker);
           }
-        } catch { /* directory doesn't exist */ }
-      } else {
-        const fullPath = path.join(rootDir, marker);
-        if (fs.existsSync(fullPath)) {
-          found.push(marker);
         }
       }
     }

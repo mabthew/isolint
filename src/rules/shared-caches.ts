@@ -40,9 +40,10 @@ export const sharedCachesRule: Rule = {
         message: `Hardcoded cache directory "${cacheDir}" — parallel worktrees will corrupt each other's cache`,
         context: lineContent.trim(),
         suggestedFix: {
-          description: 'Namespace cache directory per worktree or use an env var',
-          replacement: match[0].replace(cacheDir, `\${WORKTREE_CACHE:-${cacheDir}}`),
+          description: 'Parallel worktrees sharing a cache dir can corrupt each other\'s cached data',
+          replacement: match[0].replace(cacheDir, `\${CACHE_DIR:-${cacheDir}}`),
           confidence: 'review',
+          docUrl: 'https://isolint.dev/docs/rules/shared-caches',
         },
       });
     }
@@ -69,6 +70,13 @@ export const sharedCachesRule: Rule = {
             matchedText: dirMatch[0],
             message: `Reference to shared cache directory "${cacheDir}" in script`,
             context: lineContent.trim(),
+            suggestedFix: {
+              description: 'Parallel worktrees sharing a cache dir can corrupt each other\'s cached data',
+              replacement: dirMatch[0],
+              confidence: 'manual',
+              howToApply: 'In CI, add branch/worktree name to the cache key so each gets its own cache',
+              docUrl: 'https://isolint.dev/docs/rules/shared-caches',
+            },
           });
         }
       }

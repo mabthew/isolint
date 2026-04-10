@@ -55,6 +55,7 @@ export function loadConfig(rootDir: string, cliConfig: Partial<AuditConfig>): Au
     respectGitignore: cliConfig.respectGitignore ?? true,
     maxFileSize: cliConfig.maxFileSize ?? fileConfig.maxFileSize ?? 1_048_576,
     verbose: cliConfig.verbose ?? false,
+    includeDocs: cliConfig.includeDocs,
   };
 }
 

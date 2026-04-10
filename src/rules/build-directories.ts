@@ -44,9 +44,10 @@ export const buildDirectoriesRule: Rule = {
           message: `${desc} "${dir}" is hardcoded — parallel builds may conflict`,
           context: trimmedLine,
           suggestedFix: {
-            description: 'Use environment variable for build directory',
+            description: 'Parallel builds writing to the same output dir can produce corrupt or stale artifacts',
             replacement: match[0].replace(dir, `\${BUILD_DIR:-${dir}}`),
             confidence: 'review',
+            docUrl: 'https://isolint.dev/docs/rules/build-directories',
           },
         });
       }
@@ -68,9 +69,11 @@ export const buildDirectoriesRule: Rule = {
           message: 'Rust project without CARGO_TARGET_DIR — all worktrees share target/, causing full rebuilds',
           context: '(set CARGO_TARGET_DIR or target-dir in .cargo/config.toml)',
           suggestedFix: {
-            description: 'Set CARGO_TARGET_DIR per worktree or add target-dir to .cargo/config.toml',
-            replacement: 'CARGO_TARGET_DIR="${WORKTREE_ROOT}/target"',
+            description: 'Without separate target dirs, switching worktrees triggers a full Rust rebuild',
+            replacement: 'CARGO_TARGET_DIR="$(git rev-parse --show-toplevel)/target"',
             confidence: 'manual',
+            howToApply: 'Set CARGO_TARGET_DIR per worktree in .envrc, or add target-dir to .cargo/config.toml',
+            docUrl: 'https://isolint.dev/docs/rules/build-directories',
           },
         });
       }
