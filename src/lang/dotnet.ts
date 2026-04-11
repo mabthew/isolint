@@ -13,7 +13,7 @@ export const dotnetPatterns: LangPatternSet = {
       description: 'UseUrls with hardcoded port',
     },
     {
-      pattern: /applicationUrl['"]\s*:\s*"[^"]*:(\d{4,5})/g,
+      pattern: /applicationUrl['"]\s*:\s*"([^"]+)"/g,
       description: 'launchSettings applicationUrl with hardcoded port',
     },
     {
@@ -23,6 +23,26 @@ export const dotnetPatterns: LangPatternSet = {
     {
       pattern: /"Url"\s*:\s*"[^"]*:(\d{4,5})"/g,
       description: 'Kestrel endpoint URL with hardcoded port',
+    },
+    {
+      pattern: /\bListenAnyIP\s*\(\s*(\d{4,5})/g,
+      description: 'Kestrel ListenAnyIP with hardcoded port',
+    },
+    {
+      pattern: /\bListenLocalhost\s*\(\s*(\d{4,5})/g,
+      description: 'Kestrel ListenLocalhost with hardcoded port',
+    },
+    {
+      pattern: /\bListen\s*\(\s*IPAddress\.\w+\s*,\s*(\d{4,5})/g,
+      description: 'Kestrel Listen(IPAddress, port) with hardcoded port',
+    },
+    {
+      pattern: /"HTTPS?_PORTS"\s*[:=]\s*"?(\d{4,5})/g,
+      description: 'HTTP_PORTS/HTTPS_PORTS env var with hardcoded port',
+    },
+    {
+      pattern: /"sslPort"\s*:\s*(\d{4,5})/g,
+      description: 'launchSettings sslPort with hardcoded port',
     },
   ],
   buildOutputDirs: ['bin', 'obj', 'publish'],

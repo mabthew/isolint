@@ -197,9 +197,36 @@ function getIgnoredLines(lines: string[]): Set<number> {
 }
 
 /**
+ * Find the index of `needle` in `line` starting at `start`, ignoring
+ * occurrences inside string literals (single, double, backtick).
+ * Handles backslash escapes.
+ */
+function findOutsideStrings(line: string, needle: string, start: number): number {
+  let i = start;
+  let quote: string | null = null;
+  while (i < line.length) {
+    const c = line[i];
+    if (quote !== null) {
+      if (c === '\\') { i += 2; continue; }
+      if (c === quote) { quote = null; i++; continue; }
+      i++;
+      continue;
+    }
+    if (c === '"' || c === "'" || c === '`') {
+      quote = c;
+      i++;
+      continue;
+    }
+    if (line.startsWith(needle, i)) return i;
+    i++;
+  }
+  return -1;
+}
+
+/**
  * Find lines inside multi-line comment blocks (/* ... *​/).
  * Returns a Set of 1-based line numbers that are inside block comments.
- * Handles nested contexts: strings containing /​* are not treated as comment starts.
+ * String-literal aware: `/​*` inside "http://*:5271" is not treated as a comment start.
  */
 function getMultiLineCommentLines(lines: string[]): Set<number> {
   const commented = new Set<number>();
@@ -210,17 +237,17 @@ function getMultiLineCommentLines(lines: string[]): Set<number> {
 
     if (inBlock) {
       commented.add(i + 1); // 1-based
+      // When we're already inside a block comment, `*/` ends it regardless
+      // of apparent string quotes (we aren't parsing code inside the comment).
       if (line.includes('*/')) {
         inBlock = false;
       }
     } else {
-      // Check for /* that opens a block comment (not closed on same line)
-      // Simple approach: scan for /* and */ on the line
       let pos = 0;
       while (pos < line.length) {
-        const openIdx = line.indexOf('/*', pos);
+        const openIdx = findOutsideStrings(line, '/*', pos);
         if (openIdx === -1) break;
-        const closeIdx = line.indexOf('*/', openIdx + 2);
+        const closeIdx = findOutsideStrings(line, '*/', openIdx + 2);
         if (closeIdx === -1) {
           // Opens a block that continues to next line
           inBlock = true;
@@ -302,12 +329,14 @@ function crossCategoryDedup(findings: Finding[]): Finding[] {
 }
 
 /**
- * Same-category dedup: keep only the highest-severity finding per file:line:category.
+ * Same-category dedup: keep only the highest-severity finding per file:line:category:matchedText.
+ * matchedText is included so distinct ports on the same line (e.g. multi-URL applicationUrl)
+ * don't collapse into a single finding.
  */
 function deduplicateFindings(findings: Finding[]): Finding[] {
   const byKey = new Map<string, Finding>();
   for (const f of findings) {
-    const key = `${f.filePath}:${f.line}:${f.category}`;
+    const key = `${f.filePath}:${f.line}:${f.category}:${f.matchedText}`;
     const existing = byKey.get(key);
     if (!existing || SEVERITY_ORDER[f.severity] < SEVERITY_ORDER[existing.severity]) {
       byKey.set(key, f);

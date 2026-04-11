@@ -72,3 +72,71 @@ describe('hardcoded-ports rule', () => {
     assert.ok(findings.length > 0, 'should find localhost URL');
   });
 });
+
+describe('hardcoded-ports rule — C# / .NET', () => {
+  const dotnetPatterns = getPatternSets({ ecosystems: ['dotnet'], markers: { dotnet: ['*.csproj'] } });
+
+  it('detects Kestrel ListenAnyIP', () => {
+    const file = makeFile(`options.ListenAnyIP(5001);`, 'Program.cs');
+    const findings = hardcodedPortsRule.detect(file, dotnetPatterns);
+    assert.equal(findings.length, 1);
+    assert.equal(findings[0].message.includes('ListenAnyIP'), true);
+  });
+
+  it('detects Kestrel ListenLocalhost', () => {
+    const file = makeFile(`options.ListenLocalhost(5002);`, 'Program.cs');
+    const findings = hardcodedPortsRule.detect(file, dotnetPatterns);
+    assert.equal(findings.length, 1);
+  });
+
+  it('detects Listen(IPAddress.Any, port)', () => {
+    const file = makeFile(`options.Listen(IPAddress.Loopback, 5004, opts => opts.UseHttps());`, 'Program.cs');
+    const findings = hardcodedPortsRule.detect(file, dotnetPatterns);
+    assert.equal(findings.length, 1);
+  });
+
+  it('emits one finding per port in multi-URL applicationUrl', () => {
+    const content = `{\n  "profiles": {\n    "http": {\n      "applicationUrl": "https://localhost:5243;http://localhost:5223"\n    }\n  }\n}`;
+    const file = makeFile(content, 'Properties/launchSettings.json', 'launchSettings.json');
+    const findings = hardcodedPortsRule.detect(file, dotnetPatterns);
+    const ports = findings.map(f => f.message.match(/port (\d+)/)?.[1]).sort();
+    assert.deepEqual(ports, ['5223', '5243']);
+  });
+
+  it('detects sslPort in launchSettings (IIS Express port range)', () => {
+    const content = `{\n  "profiles": {\n    "iisExpress": {\n      "sslPort": 44365\n    }\n  }\n}`;
+    const file = makeFile(content, 'Properties/launchSettings.json', 'launchSettings.json');
+    const findings = hardcodedPortsRule.detect(file, dotnetPatterns);
+    assert.equal(findings.length, 1);
+    assert.equal(findings[0].message.includes('44365'), true);
+  });
+
+  it('detects HTTP_PORTS/HTTPS_PORTS env var format', () => {
+    const content = `{\n  "HTTP_PORTS": "8080",\n  "HTTPS_PORTS": "8443"\n}`;
+    const file = makeFile(content, 'appsettings.json', 'appsettings.json');
+    const findings = hardcodedPortsRule.detect(file, dotnetPatterns);
+    assert.equal(findings.length, 2);
+  });
+
+  it('detects Kestrel EndPoints Url with wildcard host', () => {
+    const content = `{\n  "Kestrel": {\n    "EndPoints": {\n      "Http": {\n        "Url": "http://*:5271"\n      }\n    }\n  }\n}`;
+    const file = makeFile(content, 'appsettings.json', 'appsettings.json');
+    const findings = hardcodedPortsRule.detect(file, dotnetPatterns);
+    assert.ok(findings.length >= 1);
+    assert.equal(findings[0].message.includes('5271'), true);
+  });
+});
+
+describe('multi-line comment detection — string-literal awareness', () => {
+  const nodePatterns = getPatternSets({ ecosystems: ['node'], markers: { node: ['package.json'] } });
+
+  it('does not treat /* inside a URL string as a block comment', () => {
+    // Regression: `"http://*:5271"` used to confuse the block-comment
+    // detector into marking every subsequent line as "inside a comment".
+    const content = `const url = "http://*:5271";\napp.listen(3000);`;
+    const file = makeFile(content, 'server.ts');
+    const findings = hardcodedPortsRule.detect(file, nodePatterns);
+    // Should detect 3000 on line 2 (not filtered out as "commented")
+    assert.ok(findings.some(f => f.line === 2), 'should detect port on line after string containing /*');
+  });
+});

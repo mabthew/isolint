@@ -81,7 +81,10 @@ export const hardcodedPortsRule: Rule = {
     // 3. Source code — use ecosystem-specific patterns + universal patterns
     const eco = ecosystemForExtension(file.extension);
     const relevantPatterns = langPatterns.filter(
-      (p) => p.sourceExtensions.includes(file.extension) || eco === p.ecosystem,
+      (p) =>
+        p.sourceExtensions.includes(file.extension) ||
+        eco === p.ecosystem ||
+        matchesConfigFileGlob(file, p.configFileGlobs),
     );
 
     // Run ecosystem-specific port patterns
@@ -90,9 +93,6 @@ export const hardcodedPortsRule: Rule = {
         const regex = new RegExp(patDef.pattern.source, patDef.pattern.flags);
         let match: RegExpExecArray | null;
         while ((match = regex.exec(file.content)) !== null) {
-          const port = parseInt(match[1], 10);
-          if (!isLikelyPort(port)) continue;
-
           const lineNum = lineNumberAt(file.lineOffsets, match.index);
           const lineContent = file.lines[lineNum - 1] || "";
           const col =
@@ -109,6 +109,36 @@ export const hardcodedPortsRule: Rule = {
             lineContent.includes("env::var") ||
             lineContent.includes("ENV[") ||
             lineContent.includes("${")
+          )
+            continue;
+
+          // Special case: applicationUrl can contain multiple semicolon-separated URLs
+          // e.g. "https://localhost:5243;http://localhost:5223" → emit one finding per port
+          if (patDef.description.includes("applicationUrl")) {
+            const urlValue = match[1];
+            const portRegex = /:(\d{4,5})\b/g;
+            let portMatch: RegExpExecArray | null;
+            while ((portMatch = portRegex.exec(urlValue)) !== null) {
+              const port = parseInt(portMatch[1], 10);
+              findings.push(
+                buildDotnetPortFinding(
+                  ps,
+                  patDef.description,
+                  port,
+                  file.filePath,
+                  lineNum,
+                  col,
+                  lineContent,
+                ),
+              );
+            }
+            continue;
+          }
+
+          const port = parseInt(match[1], 10);
+          if (
+            !isUnambiguousPortContext(patDef.description) &&
+            !isLikelyPort(port)
           )
             continue;
 
@@ -209,6 +239,84 @@ export const hardcodedPortsRule: Rule = {
     return findings;
   },
 };
+
+/**
+ * Check if a file matches any of the given config file globs.
+ * Supports exact filenames (`appsettings.json`), wildcards (`*.csproj`),
+ * wildcard suffixes (`appsettings.*.json`), and path fragments (`Properties/launchSettings.json`).
+ */
+function matchesConfigFileGlob(
+  file: FileContext,
+  configFileGlobs: string[],
+): boolean {
+  for (const glob of configFileGlobs) {
+    if (glob === file.basename) return true;
+    if (glob.endsWith("/") + file.basename === glob) return true;
+    if (glob.includes("/") && file.filePath.endsWith(glob)) return true;
+    if (glob.startsWith("*")) {
+      const suffix = glob.slice(1);
+      if (file.basename.endsWith(suffix)) return true;
+    }
+    if (glob.includes("*")) {
+      const re = new RegExp(
+        "^" + glob.replace(/\./g, "\\.").replace(/\*/g, ".*") + "$",
+      );
+      if (re.test(file.basename)) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Dotnet patterns whose context unambiguously indicates a port number,
+ * so the generic `isLikelyPort` range check should be bypassed
+ * (e.g. IIS Express sslPort 44365 is outside the dev port ranges but is clearly a port).
+ */
+const UNAMBIGUOUS_PORT_DESCRIPTIONS = [
+  "applicationUrl",
+  "sslPort",
+  "HTTP_PORTS",
+  "ListenAnyIP",
+  "ListenLocalhost",
+  "Listen(IPAddress",
+];
+
+function isUnambiguousPortContext(description: string): boolean {
+  return UNAMBIGUOUS_PORT_DESCRIPTIONS.some((k) => description.includes(k));
+}
+
+function buildDotnetPortFinding(
+  ps: LangPatternSet,
+  description: string,
+  port: number,
+  filePath: string,
+  lineNum: number,
+  col: number,
+  lineContent: string,
+): Finding {
+  return {
+    ruleId: `hardcoded-ports/${ps.ecosystem}`,
+    category: "hardcoded-port",
+    severity: "high",
+    filePath,
+    line: lineNum,
+    column: col,
+    matchedText: `:${port}`,
+    message: `${description}: port ${port}`,
+    context: lineContent.trim(),
+    ecosystem: ps.ecosystem,
+    suggestedFix: ps.fixTemplates["hardcoded-port"]
+      ? {
+          description: ps.fixTemplates["hardcoded-port"]!.description,
+          replacement: ps.fixTemplates[
+            "hardcoded-port"
+          ]!.envVarPattern.replace("$ORIGINAL", String(port)),
+          confidence: "review",
+          docUrl: "https://isolint.dev/docs/rules/hardcoded-ports",
+        }
+      : undefined,
+  };
+}
 
 function detectEnvPorts(file: FileContext): Finding[] {
   const findings: Finding[] = [];

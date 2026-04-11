@@ -107,6 +107,18 @@ export function formatTerminalReport(report: AuditReport, showFixes: boolean, qu
       lines.push('');
     }
 
+    // Collect unique doc URLs by category so we can show each next to its summary row
+    const docUrls = new Map<string, string>();
+    for (const f of report.findings) {
+      if (f.suggestedFix?.docUrl && !docUrls.has(f.category)) {
+        docUrls.set(f.category, f.suggestedFix.docUrl.replace('https://', ''));
+      }
+    }
+
+    // Build each summary row, then right-pad to the widest visible width
+    // so the doc URLs line up in a column on the right.
+    const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '');
+    const rows: Array<{ body: string; docUrl: string | undefined }> = [];
     for (const s of report.summary) {
       const summaryParts: string[] = [];
       for (const [sev, count] of Object.entries(s.bySeverity)) {
@@ -114,21 +126,16 @@ export function formatTerminalReport(report: AuditReport, showFixes: boolean, qu
         summaryParts.push(color(`${count} ${sev}`));
       }
       const catName = pc.bold(s.category.padEnd(18));
-      lines.push(`  ${catName}  ${s.count} findings (${summaryParts.join(', ')})`);
+      const body = `  ${catName}  ${s.count} findings (${summaryParts.join(', ')})`;
+      rows.push({ body, docUrl: docUrls.get(s.category) });
+    }
+    const widest = rows.reduce((m, r) => Math.max(m, stripAnsi(r.body).length), 0);
+    for (const r of rows) {
+      const padded = r.body + ' '.repeat(widest - stripAnsi(r.body).length);
+      const suffix = r.docUrl ? '  ' + pc.dim(r.docUrl) : '';
+      lines.push(padded + suffix);
     }
     lines.push('');
-
-    // Collect unique doc URLs by category
-    const docUrls = new Map<string, string>();
-    for (const f of report.findings) {
-      if (f.suggestedFix?.docUrl && !docUrls.has(f.category)) {
-        docUrls.set(f.category, f.suggestedFix.docUrl.replace('https://', ''));
-      }
-    }
-    if (docUrls.size > 0) {
-      lines.push(`  ${pc.dim('Docs: ' + Array.from(docUrls.values()).join('  '))}`);
-      lines.push('');
-    }
   } else if (report.findings.length === 0) {
     return '';
   }
