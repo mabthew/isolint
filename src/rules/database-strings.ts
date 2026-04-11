@@ -48,7 +48,7 @@ export const databaseStringsRule: Rule = {
         ?.fixTemplates['database-string'];
 
       const replacement = fixTemplate
-        ? fixTemplate.envVarPattern.replace('$ORIGINAL', url.length > 80 ? url.slice(0, 77) + '...' : url)
+        ? fixTemplate.envVarPattern.replace('$ORIGINAL', url)
         : 'process.env.DATABASE_URL';
       const fixDescription = fixTemplate
         ? fixTemplate.description
@@ -61,9 +61,9 @@ export const databaseStringsRule: Rule = {
         filePath: file.filePath,
         line: lineNum,
         column: match.index - file.content.lastIndexOf('\n', match.index - 1),
-        matchedText: url.length > 80 ? url.slice(0, 77) + '...' : url,
+        matchedText: url,
         message: `Hardcoded ${protocol} connection string — database name should be per-worktree`,
-        context: trimmedLine.length > 120 ? trimmedLine.slice(0, 117) + '...' : trimmedLine,
+        context: trimmedLine,
         ecosystem: eco !== 'unknown' ? eco : undefined,
         suggestedFix: {
           description: fixDescription,
@@ -77,12 +77,29 @@ export const databaseStringsRule: Rule = {
     // 2. Ecosystem-specific DB patterns
     const eco = ecosystemForExtension(file.extension);
     for (const ps of langPatterns) {
-      if (ps.ecosystem !== eco && !ps.configFileGlobs.some(g => file.filePath.endsWith(g.replace('*', '')))) continue;
+      if (
+        ps.ecosystem !== eco &&
+        !ps.configFileGlobs.some(
+          (g) =>
+            file.basename === g ||
+            file.filePath.endsWith(g.replace('*', '')) ||
+            (g.includes('*') && new RegExp('^' + g.replace(/\./g, '\\.').replace(/\*/g, '.*') + '$').test(file.basename)),
+        )
+      )
+        continue;
 
       for (const patDef of ps.dbStringPatterns) {
         const regex = new RegExp(patDef.pattern.source, patDef.pattern.flags);
         while ((match = regex.exec(file.content)) !== null) {
-          const lineNum = lineNumberAt(file.lineOffsets, match.index);
+          // Anchor on the inner capture group when present — for patterns like
+          // `"ConnectionStrings": { ... "Name": "(value)" }` where the match
+          // spans multiple lines, the capture is where the user wants to look,
+          // not the block opener.
+          const anchorOffset =
+            match[1] !== undefined && match[0].indexOf(match[1]) !== -1
+              ? match.index + match[0].indexOf(match[1])
+              : match.index;
+          const lineNum = lineNumberAt(file.lineOffsets, anchorOffset);
           const lineContent = file.lines[lineNum - 1] || '';
 
           // Skip if already found by universal pattern
@@ -92,21 +109,22 @@ export const databaseStringsRule: Rule = {
           if (lineContent.includes('${') || lineContent.includes('process.env') || lineContent.includes('os.environ')) continue;
 
           const ecoFixTemplate = ps.fixTemplates['database-string'];
+          const displayText = match[1] ?? match[0];
           findings.push({
             ruleId: `database-strings/${ps.ecosystem}`,
             category: 'database-string',
             severity: 'high',
             filePath: file.filePath,
             line: lineNum,
-            column: match.index - file.content.lastIndexOf('\n', match.index - 1),
-            matchedText: match[0].length > 80 ? match[0].slice(0, 77) + '...' : match[0],
+            column: anchorOffset - file.content.lastIndexOf('\n', anchorOffset - 1),
+            matchedText: displayText,
             message: `${patDef.description}`,
             context: lineContent.trim(),
             ecosystem: ps.ecosystem,
             suggestedFix: {
               description: ecoFixTemplate?.description || 'Use an environment variable for the database connection string',
               replacement: ecoFixTemplate
-                ? ecoFixTemplate.envVarPattern.replace('$ORIGINAL', match[0].length > 80 ? match[0].slice(0, 77) + '...' : match[0])
+                ? ecoFixTemplate.envVarPattern.replace('$ORIGINAL', displayText)
                 : 'process.env.DATABASE_URL',
               confidence: 'review',
               docUrl: 'https://isolint.dev/docs/rules/database-strings',

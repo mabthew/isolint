@@ -36,6 +36,7 @@ export function createCli(): Command {
     .option('--include-docs [exts]', 'Include doc/template files (default: skip). Optionally specify extensions: .md,.txt')
     .option('-q, --quiet', 'Findings only, no header/footer')
     .option('-v, --verbose', 'Show scan progress and detected ecosystems')
+    .option('--compact', 'Force one-line-per-finding output (default when piped / non-TTY)')
     .action(async (targetPath: string, opts: Record<string, unknown>) => {
       const rootDir = path.resolve(targetPath as string);
 
@@ -105,7 +106,10 @@ export function createCli(): Command {
         } else if (config.format === 'markdown' || config.format === 'report') {
           console.log(formatMarkdownReport(report));
         } else {
-          console.log(formatTerminalReport(report, showSuggestions, opts.quiet as boolean, opts.verbose as boolean));
+          // Gutter view when attached to a real terminal; compact one-liner when piped,
+          // CI, or when the user explicitly passes --compact.
+          const useGutter = !opts.compact && Boolean(process.stdout.isTTY);
+          console.log(formatTerminalReport(report, showSuggestions, opts.quiet as boolean, opts.verbose as boolean, useGutter));
         }
 
         // Interactive fix mode

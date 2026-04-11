@@ -1,4 +1,4 @@
-import { AuditConfig, AuditReport, CategorySummary, Finding, LangPatternSet, RepoProfile, Rule, Category, Severity } from './types.js';
+import { AuditConfig, AuditReport, CategorySummary, ContextLine, Finding, LangPatternSet, RepoProfile, Rule, Category, Severity } from './types.js';
 import { discoverFiles, readFileContext } from './scanner.js';
 import { detectEcosystems, getPatternSets } from './lang/index.js';
 import { getAllRules } from './rules/index.js';
@@ -90,6 +90,11 @@ export async function runAudit(config: AuditConfig): Promise<AuditReport> {
 
       // Filter out ignored lines
       const filtered = ruleFindings.filter(f => !ignoredLines.has(f.line));
+
+      // Enrich with surrounding context lines for rich terminal rendering
+      for (const f of filtered) {
+        f.contextLines = collectContextLines(fileCtx.lines, f.line, 2);
+      }
 
       // Downgrade doc/template files to info when included via --include-docs
       if (isDoc || isTemplateEnvFile) {
@@ -260,6 +265,21 @@ function getMultiLineCommentLines(lines: string[]): Set<number> {
   }
 
   return commented;
+}
+
+/**
+ * Collect surrounding context lines for a finding: `window` lines above
+ * and `window` lines below the finding line, plus the finding line itself.
+ * Clamps to file boundaries.
+ */
+function collectContextLines(lines: string[], findingLine: number, window: number): ContextLine[] {
+  const start = Math.max(1, findingLine - window);
+  const end = Math.min(lines.length, findingLine + window);
+  const result: ContextLine[] = [];
+  for (let ln = start; ln <= end; ln++) {
+    result.push({ line: ln, text: lines[ln - 1] ?? '' });
+  }
+  return result;
 }
 
 // --- File classification ---

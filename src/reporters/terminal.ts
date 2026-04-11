@@ -56,7 +56,14 @@ function renderScoreBar(score: number): string {
   return `  ${bar}  ${colorFn(pc.bold(`${score}/100`))} ${pc.bold(`(${grade})`)}`;
 }
 
-export function formatTerminalReport(report: AuditReport, showFixes: boolean, quiet?: boolean, verbose?: boolean): string {
+export function formatTerminalReport(
+  report: AuditReport,
+  showFixes: boolean,
+  quiet?: boolean,
+  verbose?: boolean,
+  gutter: boolean = true,
+): string {
+  const useGutter = gutter;
   const lines: string[] = [];
   const bar = pc.dim(pc.cyan('▎'));
 
@@ -161,28 +168,37 @@ export function formatTerminalReport(report: AuditReport, showFixes: boolean, qu
       byFile.set(f.filePath, arr);
     }
 
-    for (const [filePath, fileFindings] of byFile) {
-      const thinBar = pc.dim(pc.cyan('│'));
+    const thinBar = pc.dim(pc.cyan('│'));
 
-      // File path — heavy bar only here, aligns with │ below
+    for (const [filePath, fileFindings] of byFile) {
+      // File path header — heavy bar
       lines.push(`  ${pc.cyan('┃')} ${pc.white(pc.bold(pc.underline(filePath)))}`);
 
-      // Track which fix descriptions we've already shown for this file
       const shownFixDescriptions = new Set<string>();
 
       for (let i = 0; i < fileFindings.length; i++) {
         const f = fileFindings[i];
-        const isLast = i === fileFindings.length - 1;
+        // Context/sub-line prefix: keep the vertical │ flowing straight through
+        // the header and body — the only horizontal branch is the one that
+        // connects `│` → `▸` on the finding line itself.
+        const cont = `${thinBar}  `;
+
+        // Blank connector line above each finding
+        lines.push(`  ${thinBar}`);
+
+        // Header line — no branch, just the vertical │ continuing through
         const badge = SEVERITY_BADGES[f.severity];
         const loc = pc.dim(`${f.line}:${f.column}`);
-        const branch = isLast ? pc.dim(pc.cyan('└──')) : pc.dim(pc.cyan('├──'));
-        const cont = isLast ? '  ' : thinBar;
-        lines.push(`  ${thinBar}`);
-        lines.push(`  ${branch} ${badge} ${loc}  ${pc.bold(f.message)}`);
-        lines.push(`  ${cont}                   ${pc.dim(f.context)}`);
+        lines.push(`  ${thinBar}    ${badge}  ${loc}  ${pc.bold(f.message)}`);
+
+        // Body: gutter context or single-line context
+        if (useGutter && f.contextLines && f.contextLines.length > 0) {
+          renderFindingGutterBody(f, cont);
+        } else {
+          lines.push(`  ${cont}       ${pc.dim(f.context)}`);
+        }
 
         if (showFixes && f.suggestedFix) {
-          // Skip duplicate fixes — show once per unique description in a file
           const fixKey = f.suggestedFix.description + f.suggestedFix.replacement;
           if (shownFixDescriptions.has(fixKey)) continue;
           shownFixDescriptions.add(fixKey);
@@ -192,19 +208,73 @@ export function formatTerminalReport(report: AuditReport, showFixes: boolean, qu
             : f.suggestedFix.confidence === 'review'
               ? pc.yellow('suggested fix')
               : pc.red('manual steps');
-          const pad = '         ';
-          lines.push(`  ${cont}${pad}${confidence}  ${pc.dim(f.suggestedFix.description)}`);
+          lines.push(`  ${cont}`);
+          lines.push(`  ${cont}       ${confidence}  ${pc.dim(f.suggestedFix.description)}`);
           if (f.suggestedFix.confidence === 'manual' && f.suggestedFix.howToApply) {
-            lines.push(`  ${cont}${pad}${pc.dim(f.suggestedFix.howToApply)}`);
+            lines.push(`  ${cont}       ${pc.dim(f.suggestedFix.howToApply)}`);
           } else {
             const replacementLine = f.suggestedFix.replacement.split('\n')[0];
-            lines.push(`  ${cont}${pad}${pc.green('→')} ${pc.green(replacementLine)}`);
+            lines.push(`  ${cont}       ${pc.green('→')} ${pc.green(replacementLine)}`);
           }
-          lines.push(`  ${cont}`);
         }
       }
       lines.push('');
     }
+  }
+
+  /**
+   * Semgrep-style gutter body rendered inside the file tree.
+   * Lines are prefixed with `cont` so they tie into the ├──/└── branches above.
+   *
+   *   │      13 ┆   "ConnectionStrings": {
+   *   │      14 ┆     "WebHooksDB": "..."
+   *   │    ▸ 15 ┆     "EventBus": "amqp://localhost"
+   *   │      16 ┆   },
+   */
+  function renderFindingGutterBody(f: Finding, cont: string) {
+    const ctx = f.contextLines!;
+    const maxLine = ctx.reduce((m, c) => Math.max(m, c.line), 0);
+    const gutterWidth = String(maxLine).length;
+    const sep = pc.dim('┆');
+    const sevColor = SEVERITY_COLORS[f.severity];
+
+    // Horizontal connector from the vertical │ to the ▸ marker for the finding line
+    // Replaces the leading `│    ` (cont + 4 spaces) with `├────▸` — same visual width.
+    const findingBranch = pc.dim(pc.cyan('├────')) + sevColor(pc.bold('▸'));
+
+    for (const c of ctx) {
+      const isFinding = c.line === f.line;
+      const lnStr = String(c.line).padStart(gutterWidth, ' ');
+      const lnCol = isFinding ? pc.bold(sevColor(lnStr)) : pc.dim(lnStr);
+
+      if (isFinding) {
+        const highlighted = highlightMatch(c.text, f.column, f.matchedText, sevColor);
+        lines.push(`  ${findingBranch} ${lnCol} ${sep} ${highlighted}`);
+      } else {
+        lines.push(`  ${cont}    ${lnCol} ${sep} ${pc.dim(c.text)}`);
+      }
+    }
+  }
+
+  /**
+   * Highlight the offending span on a source line by bolding + coloring
+   * the substring that starts at `column` and has length `matchedText.length`.
+   * Falls back to rendering the full line bright if the span can't be located.
+   */
+  function highlightMatch(lineText: string, column: number, matchedText: string, color: (s: string) => string): string {
+    if (!matchedText || column < 1) return color(lineText);
+    // Try the column-based slice first
+    const startIdx = column - 1;
+    const endIdx = startIdx + matchedText.length;
+    if (endIdx <= lineText.length && lineText.slice(startIdx, endIdx) === matchedText) {
+      return lineText.slice(0, startIdx) + color(pc.bold(matchedText)) + lineText.slice(endIdx);
+    }
+    // Fall back to indexOf search — matches may have shifted if context got trimmed
+    const foundIdx = lineText.indexOf(matchedText);
+    if (foundIdx !== -1) {
+      return lineText.slice(0, foundIdx) + color(pc.bold(matchedText)) + lineText.slice(foundIdx + matchedText.length);
+    }
+    return color(lineText);
   }
 
   // Section headers: uppercase bold + heavy divider

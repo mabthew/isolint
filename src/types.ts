@@ -38,8 +38,16 @@ export interface Finding {
   matchedText: string;
   message: string;
   context: string;
+  /** Surrounding source lines for rich terminal rendering (populated by the engine). */
+  contextLines?: ContextLine[];
   ecosystem?: Ecosystem;
   suggestedFix?: SuggestedFix;
+}
+
+export interface ContextLine {
+  /** 1-based line number in the source file. */
+  line: number;
+  text: string;
 }
 
 export interface SuggestedFix {
