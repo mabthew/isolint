@@ -191,7 +191,7 @@ export function formatTerminalReport(
         const loc = pc.dim(`${f.line}:${f.column}`);
         lines.push(`  ${thinBar}    ${badge}  ${loc}  ${pc.bold(f.message)}`);
 
-        // Body: gutter context or single-line context
+        // Source context: gutter view when we have contextLines + TTY, compact otherwise
         if (useGutter && f.contextLines && f.contextLines.length > 0) {
           renderFindingGutterBody(f, cont);
         } else {
@@ -199,22 +199,30 @@ export function formatTerminalReport(
         }
 
         if (showFixes && f.suggestedFix) {
-          const fixKey = f.suggestedFix.description + f.suggestedFix.replacement;
+          // Include the finding line so identical (description, replacement)
+          // pairs on different lines each render their own suggestion block.
+          const fixKey = `${f.suggestedFix.description}|${f.suggestedFix.replacement}|${f.line}`;
           if (shownFixDescriptions.has(fixKey)) continue;
           shownFixDescriptions.add(fixKey);
 
-          const confidence = f.suggestedFix.confidence === 'auto'
-            ? pc.green(pc.bold('auto-fixable'))
-            : f.suggestedFix.confidence === 'review'
-              ? pc.yellow('suggested fix')
-              : pc.red('manual steps');
-          lines.push(`  ${cont}`);
-          lines.push(`  ${cont}       ${confidence}  ${pc.dim(f.suggestedFix.description)}`);
-          if (f.suggestedFix.confidence === 'manual' && f.suggestedFix.howToApply) {
-            lines.push(`  ${cont}       ${pc.dim(f.suggestedFix.howToApply)}`);
+          // In gutter mode render the suggestion block; otherwise keep the
+          // existing single-line `→ replacement` form used by CI / piped output.
+          if (useGutter) {
+            renderSuggestionBlock(f, cont);
           } else {
-            const replacementLine = f.suggestedFix.replacement.split('\n')[0];
-            lines.push(`  ${cont}       ${pc.green('→')} ${pc.green(replacementLine)}`);
+            const confidence = f.suggestedFix.confidence === 'auto'
+              ? pc.green(pc.bold('auto-fixable'))
+              : f.suggestedFix.confidence === 'review'
+                ? pc.yellow('suggested fix')
+                : pc.red('manual steps');
+            lines.push(`  ${cont}`);
+            lines.push(`  ${cont}       ${confidence}  ${pc.dim(f.suggestedFix.description)}`);
+            if (f.suggestedFix.confidence === 'manual' && f.suggestedFix.howToApply) {
+              lines.push(`  ${cont}       ${pc.dim(f.suggestedFix.howToApply)}`);
+            } else if (f.suggestedFix.replacement) {
+              const replacementLine = f.suggestedFix.replacement.split('\n')[0];
+              lines.push(`  ${cont}       ${pc.green('→')} ${pc.green(replacementLine)}`);
+            }
           }
         }
       }
@@ -254,6 +262,48 @@ export function formatTerminalReport(
         lines.push(`  ${cont}    ${lnCol} ${sep} ${pc.dim(c.text)}`);
       }
     }
+  }
+
+  /**
+   * Suggestion block — the `--suggest` body. Shown below the gutter view as a
+   * boxed code block containing the recommended replacement. Does NOT attempt
+   * a textual splice into the source line because current isolint fixes are
+   * illustrative rather than drop-in safe (see roadmap item #12). When
+   * precise per-context replacements land, this can graduate to a real diff
+   * hunk renderer.
+   *
+   *   │
+   *   │     ╭─ suggested fix · review · Use Environment.GetEnvironmentVariable with fallback
+   *   │     │   Environment.GetEnvironmentVariable("PORT") ?? "5045"
+   *   │     ╰─
+   */
+  function renderSuggestionBlock(f: Finding, cont: string) {
+    const fix = f.suggestedFix!;
+    const confidenceLabel =
+      fix.confidence === 'auto'
+        ? pc.green(pc.bold('auto-fix'))
+        : fix.confidence === 'review'
+          ? pc.yellow('review')
+          : pc.red('manual');
+
+    const header = `${pc.yellow('suggested fix')} · ${confidenceLabel} · ${pc.dim(fix.description)}`;
+    const indent = '     '; // 5 spaces — sits under the gutter body
+
+    lines.push(`  ${cont}`);
+    lines.push(`  ${cont}${indent}${pc.dim('╭─')} ${header}`);
+
+    if (fix.confidence === 'manual' && fix.howToApply) {
+      // Manual fixes: show the how-to text as the body
+      for (const ln of fix.howToApply.split('\n')) {
+        lines.push(`  ${cont}${indent}${pc.dim('│')}   ${pc.dim(ln)}`);
+      }
+    } else if (fix.replacement) {
+      for (const ln of fix.replacement.split('\n')) {
+        lines.push(`  ${cont}${indent}${pc.dim('│')}   ${pc.green(ln)}`);
+      }
+    }
+
+    lines.push(`  ${cont}${indent}${pc.dim('╰─')}`);
   }
 
   /**
