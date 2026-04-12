@@ -48,6 +48,9 @@ const STRING_EMBEDDED_PORT_ECOSYSTEMS: Ecosystem[] = ['go', 'rust'];
 /** Ecosystems whose envVarPattern produces a valid bare-numeric replacement */
 const AUTO_FIX_ECOSYSTEMS: Ecosystem[] = ['node', 'python', 'ruby', 'php', 'elixir', 'swift'];
 
+/** Pattern descriptions where the port is inside a URL/string (not a bare number) */
+const URL_EMBEDDED_PATTERN_KEYWORDS = ['localhost', 'loopback', 'bind-all'];
+
 /** Universal port pattern for .env files. */
 const ENV_PORT_PATTERN = /^([A-Z_]*PORT[A-Z_]*)\s*=\s*(\d+)/gm;
 
@@ -170,7 +173,10 @@ export const hardcodedPortsRule: Rule = {
             continue;
 
           const format = getFileFormat(file);
-          const fix = buildPortFix(ps, port, format, file);
+          const isUrlEmbedded = URL_EMBEDDED_PATTERN_KEYWORDS.some(
+            kw => patDef.description.toLowerCase().includes(kw),
+          );
+          const fix = buildPortFix(ps, port, format, file, isUrlEmbedded);
 
           findings.push({
             ruleId: `hardcoded-ports/${ps.ecosystem}`,
@@ -332,6 +338,7 @@ function buildPortFix(
   port: number,
   format: FileFormat,
   file: FileContext,
+  isUrlEmbedded = false,
 ): Finding['suggestedFix'] {
   const template = ps.fixTemplates['hardcoded-port'];
   if (!template) return undefined;
@@ -369,13 +376,14 @@ function buildPortFix(
     };
   }
 
-  // Source code: Go/Rust have ports inside string literals — can't replace bare number
-  if (STRING_EMBEDDED_PORT_ECOSYSTEMS.includes(ps.ecosystem)) {
+  // Source code: port inside a URL string (localhost:PORT, 127.0.0.1:PORT, etc.)
+  // or Go/Rust where ports are always inside string literals — can't replace bare number
+  if (isUrlEmbedded || STRING_EMBEDDED_PORT_ECOSYSTEMS.includes(ps.ecosystem)) {
     return {
-      description: template.description,
+      description: "Use an environment variable for the port in this URL",
       replacement: portStr,
       confidence: 'manual',
-      howToApply: `Extract the port to an environment variable and build the address string dynamically (e.g., ":" + ${template.envVarPattern.replace('$ORIGINAL', portStr)})`,
+      howToApply: `Extract the port to an environment variable and build the URL dynamically (e.g., \`http://localhost:\${PORT}\` where PORT defaults to ${port})`,
       docUrl: 'https://isolint.dev/docs/rules/hardcoded-ports',
     };
   }
