@@ -60,12 +60,22 @@ isolint . --suggest
 # Preview auto-fixes without writing
 isolint . --fix --dry-run
 
-# Apply auto-fixable changes
+# Apply auto-fixable changes (backs up originals)
 isolint . --fix
 
 # JSON output for CI
 isolint . --format json
 ```
+
+### Fix confidence levels
+
+Every finding includes a suggested fix with a confidence level:
+
+- **auto** — Safe drop-in replacement. `--fix` applies these directly. Covers `.listen(3000)` → `process.env.PORT`, Docker Compose port mappings, `container_name` interpolation, Spring `server.port` placeholders, and more.
+- **review** — Likely correct but worth checking. Shown in `--suggest` output.
+- **manual** — Structural change needed (e.g., JSON configs that can't inline env vars, Dockerfile `EXPOSE`). `--suggest` shows step-by-step instructions via `howToApply`.
+
+Replacements are file-format-aware: the same port finding produces `process.env.PORT` in a `.ts` file, `os.environ.get("PORT")` in `.py`, `${PORT:8080}` in `.properties`, and a manual instruction in `.json`.
 
 ## What it detects
 
@@ -85,7 +95,7 @@ isolint . --format json
 
 Node/TypeScript | Python | Go | Rust | Java/Kotlin | C#/.NET | Ruby/Rails | PHP | Elixir | Swift | C/C++
 
-Each ecosystem gets tailored detection patterns and idiomatic fix suggestions (e.g., `process.env.PORT` for Node, `os.environ.get("PORT")` for Python, `ENV.fetch("PORT")` for Ruby).
+Each ecosystem gets tailored detection patterns and idiomatic fix suggestions. Fixes are file-format-aware — the same finding produces different replacements in source code vs. JSON config vs. YAML vs. `.properties` files.
 
 ## CI integration
 
