@@ -1,6 +1,10 @@
-import { Rule, Finding, FileContext, LangPatternSet, lineNumberAt } from '../types.js';
+import { Rule, Finding, FileContext, LangPatternSet, FixConfidence, lineNumberAt } from '../types.js';
 import { DB_URL_PATTERN } from '../lang/patterns.js';
 import { ecosystemForExtension } from '../lang/index.js';
+
+function isNonInterpolableConfig(ext: string): boolean {
+  return ext === '.json' || ext === '.xml';
+}
 
 export const databaseStringsRule: Rule = {
   id: 'database-strings',
@@ -54,6 +58,9 @@ export const databaseStringsRule: Rule = {
         ? fixTemplate.description
         : 'Use an environment variable for the database URL';
 
+      const isConfig = isNonInterpolableConfig(file.extension);
+      const confidence: FixConfidence = isConfig ? 'manual' : 'review';
+
       findings.push({
         ruleId: 'database-strings/url',
         category: 'database-string',
@@ -67,8 +74,9 @@ export const databaseStringsRule: Rule = {
         ecosystem: eco !== 'unknown' ? eco : undefined,
         suggestedFix: {
           description: fixDescription,
-          replacement,
-          confidence: 'review',
+          replacement: isConfig ? url : replacement,
+          confidence,
+          ...(isConfig && { howToApply: 'Move the connection string to an environment variable (e.g., DATABASE_URL) and read it at application startup' }),
           docUrl: 'https://isolint.dev/docs/rules/database-strings',
         },
       });
@@ -110,6 +118,8 @@ export const databaseStringsRule: Rule = {
 
           const ecoFixTemplate = ps.fixTemplates['database-string'];
           const displayText = match[1] ?? match[0];
+          const isConfig = isNonInterpolableConfig(file.extension);
+          const ecoConfidence: FixConfidence = isConfig ? 'manual' : 'review';
           findings.push({
             ruleId: `database-strings/${ps.ecosystem}`,
             category: 'database-string',
@@ -123,10 +133,13 @@ export const databaseStringsRule: Rule = {
             ecosystem: ps.ecosystem,
             suggestedFix: {
               description: ecoFixTemplate?.description || 'Use an environment variable for the database connection string',
-              replacement: ecoFixTemplate
-                ? ecoFixTemplate.envVarPattern.replace('$ORIGINAL', displayText)
-                : 'process.env.DATABASE_URL',
-              confidence: 'review',
+              replacement: isConfig
+                ? displayText
+                : (ecoFixTemplate
+                    ? ecoFixTemplate.envVarPattern.replace('$ORIGINAL', displayText)
+                    : 'process.env.DATABASE_URL'),
+              confidence: ecoConfidence,
+              ...(isConfig && { howToApply: 'Move the connection string to an environment variable (e.g., DATABASE_URL) and read it at application startup' }),
               docUrl: 'https://isolint.dev/docs/rules/database-strings',
             },
           });

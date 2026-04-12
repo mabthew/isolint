@@ -33,6 +33,7 @@ export const buildDirectoriesRule: Rule = {
         // Skip if already using env var
         if (dir.includes('${') || dir.includes('process.env')) continue;
 
+        const isJson = file.extension === '.json';
         findings.push({
           ruleId: 'build-directories/config',
           category: 'build-directory',
@@ -43,12 +44,20 @@ export const buildDirectoriesRule: Rule = {
           matchedText: match[0],
           message: `${desc} "${dir}" is hardcoded — parallel builds may conflict`,
           context: trimmedLine,
-          suggestedFix: {
-            description: 'Parallel builds writing to the same output dir can produce corrupt or stale artifacts',
-            replacement: match[0].replace(dir, `\${BUILD_DIR:-${dir}}`),
-            confidence: 'review',
-            docUrl: 'https://isolint.dev/docs/rules/build-directories',
-          },
+          suggestedFix: isJson
+            ? {
+                description: 'Parallel builds writing to the same output dir can produce corrupt or stale artifacts',
+                replacement: match[0],
+                confidence: 'manual' as const,
+                howToApply: `Set the build output directory via an environment variable or CLI flag so each worktree builds to a separate location`,
+                docUrl: 'https://isolint.dev/docs/rules/build-directories',
+              }
+            : {
+                description: 'Parallel builds writing to the same output dir can produce corrupt or stale artifacts',
+                replacement: match[0].replace(dir, `\${BUILD_DIR:-${dir}}`),
+                confidence: 'review' as const,
+                docUrl: 'https://isolint.dev/docs/rules/build-directories',
+              },
         });
       }
     }

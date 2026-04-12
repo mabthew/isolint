@@ -46,9 +46,9 @@ export const pidAndSocketsRule: Rule = {
             ecosystem: ps.ecosystem,
             suggestedFix: {
               description: 'Each worktree needs its own PID/socket file, otherwise only one instance can run at a time',
-              replacement: match[0].replace(/\.(pid|sock(et)?)/, '.$(basename $PWD).$1'),
+              replacement: match[0],
               confidence: 'manual',
-              howToApply: 'Include the worktree directory name in the file path to make it unique per worktree',
+              howToApply: 'Include the worktree name in the PID/socket file path to make it unique (e.g., server.<worktree>.pid or puma.<worktree>.sock)',
               docUrl: 'https://isolint.dev/docs/rules/pid-and-sockets',
             },
           });
@@ -78,9 +78,9 @@ export const pidAndSocketsRule: Rule = {
         context: lineContent.trim(),
         suggestedFix: {
           description: 'Each worktree needs its own PID file — two servers can\'t write to the same one',
-          replacement: match[0].replace(pidPath, pidPath.replace('.pid', '.$(basename $PWD).pid')),
+          replacement: match[0],
           confidence: 'manual',
-          howToApply: 'Include the worktree directory name in the PID file path to make it unique',
+          howToApply: 'Include the worktree name in the PID file path to make it unique (e.g., server.<worktree>.pid)',
           docUrl: 'https://isolint.dev/docs/rules/pid-and-sockets',
         },
       });

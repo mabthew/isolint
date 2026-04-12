@@ -29,6 +29,7 @@ export const tempDirectoriesRule: Rule = {
         // Skip comments
         if (trimmedLine.startsWith('//') || trimmedLine.startsWith('#')) continue;
 
+        const isShellFile = file.extension === '.sh' || file.extension === '.bash' || file.basename === 'Makefile';
         findings.push({
           ruleId: 'temp-directories/hardcoded',
           category: 'temp-directory',
@@ -39,12 +40,20 @@ export const tempDirectoriesRule: Rule = {
           matchedText: match[0],
           message: `${desc}: ${match[1] || match[0]}`,
           context: trimmedLine,
-          suggestedFix: {
-            description: 'Two worktrees using the same temp dir will overwrite each other\'s files',
-            replacement: match[0].replace(match[1], `${match[1]}-\$(basename $PWD)`),
-            confidence: 'review',
-            docUrl: 'https://isolint.dev/docs/rules/temp-directories',
-          },
+          suggestedFix: isShellFile
+            ? {
+                description: 'Two worktrees using the same temp dir will overwrite each other\'s files',
+                replacement: match[0].replace(match[1], `${match[1]}-\$(basename $PWD)`),
+                confidence: 'review' as const,
+                docUrl: 'https://isolint.dev/docs/rules/temp-directories',
+              }
+            : {
+                description: 'Two worktrees using the same temp dir will overwrite each other\'s files',
+                replacement: match[0],
+                confidence: 'manual' as const,
+                howToApply: 'Include the worktree name in the temp directory path so each worktree uses a separate location',
+                docUrl: 'https://isolint.dev/docs/rules/temp-directories',
+              },
         });
       }
     }

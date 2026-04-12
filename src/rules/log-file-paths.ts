@@ -34,6 +34,7 @@ export const logFilePathsRule: Rule = {
         // Skip if already using env var
         if (logPath.includes('${') || lineContent.includes('process.env') || lineContent.includes('os.environ')) continue;
 
+        const isShell = file.extension === '.sh' || file.extension === '.bash' || file.basename === 'Makefile';
         findings.push({
           ruleId: 'log-file-paths/hardcoded',
           category: 'log-file-path',
@@ -44,12 +45,20 @@ export const logFilePathsRule: Rule = {
           matchedText: match[0],
           message: `${desc}: ${logPath}`,
           context: trimmedLine,
-          suggestedFix: {
-            description: 'Parallel worktrees writing to the same log file will interleave output, making logs unreadable',
-            replacement: match[0].replace(logPath, logPath.replace('.log', '.$(basename $PWD).log')),
-            confidence: 'review',
-            docUrl: 'https://isolint.dev/docs/rules/log-file-paths',
-          },
+          suggestedFix: isShell
+            ? {
+                description: 'Parallel worktrees writing to the same log file will interleave output',
+                replacement: match[0].replace(logPath, logPath.replace('.log', '.$(basename $PWD).log')),
+                confidence: 'review',
+                docUrl: 'https://isolint.dev/docs/rules/log-file-paths',
+              }
+            : {
+                description: 'Parallel worktrees writing to the same log file will interleave output',
+                replacement: match[0],
+                confidence: 'manual',
+                howToApply: 'Include the worktree name in the log file path so each worktree writes to a separate file (e.g., app.<worktree>.log)',
+                docUrl: 'https://isolint.dev/docs/rules/log-file-paths',
+              },
         });
       }
     }
@@ -79,8 +88,9 @@ export const logFilePathsRule: Rule = {
             ecosystem: ps.ecosystem,
             suggestedFix: {
               description: 'Parallel worktrees writing to the same log file will interleave output',
-              replacement: match[0].replace(/\.log\b/, '.$(basename $PWD).log'),
-              confidence: 'review',
+              replacement: match[0],
+              confidence: 'manual',
+              howToApply: 'Include the worktree name in the log file path so each worktree writes to a separate file',
               docUrl: 'https://isolint.dev/docs/rules/log-file-paths',
             },
           });

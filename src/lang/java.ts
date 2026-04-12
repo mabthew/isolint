@@ -49,7 +49,7 @@ export const javaPatterns: LangPatternSet = {
   fixTemplates: {
     'hardcoded-port': {
       sourcePattern: '$PORT',
-      envVarPattern: '${server.port:$ORIGINAL}',
+      envVarPattern: '${PORT:$ORIGINAL}',
       description: 'Use Spring property placeholder with default',
     },
     'database-string': {

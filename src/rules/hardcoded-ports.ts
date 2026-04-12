@@ -3,6 +3,8 @@ import {
   Finding,
   FileContext,
   LangPatternSet,
+  FixConfidence,
+  Ecosystem,
   lineNumberAt,
 } from "../types.js";
 import {
@@ -27,6 +29,24 @@ function isCommentLine(line: string): boolean {
     trimmed.startsWith("/*")
   );
 }
+
+type FileFormat = 'json' | 'yaml' | 'properties' | 'xml' | 'shell' | 'source';
+
+function getFileFormat(file: FileContext): FileFormat {
+  if (file.extension === '.json') return 'json';
+  if (file.extension === '.yml' || file.extension === '.yaml') return 'yaml';
+  if (file.extension === '.properties' || file.extension === '.ini') return 'properties';
+  if (file.extension === '.xml' || file.basename.endsWith('.csproj') ||
+      file.basename.endsWith('.fsproj') || file.basename.endsWith('.vbproj')) return 'xml';
+  if (file.extension === '.sh' || file.extension === '.bash' || file.basename === 'Makefile') return 'shell';
+  return 'source';
+}
+
+/** Ecosystems where port patterns match inside string literals (e.g. ":3000") */
+const STRING_EMBEDDED_PORT_ECOSYSTEMS: Ecosystem[] = ['go', 'rust'];
+
+/** Ecosystems whose envVarPattern produces a valid bare-numeric replacement */
+const AUTO_FIX_ECOSYSTEMS: Ecosystem[] = ['node', 'python', 'ruby', 'php', 'elixir', 'swift'];
 
 /** Universal port pattern for .env files. */
 const ENV_PORT_PATTERN = /^([A-Z_]*PORT[A-Z_]*)\s*=\s*(\d+)/gm;
@@ -149,6 +169,9 @@ export const hardcodedPortsRule: Rule = {
           )
             continue;
 
+          const format = getFileFormat(file);
+          const fix = buildPortFix(ps, port, format, file);
+
           findings.push({
             ruleId: `hardcoded-ports/${ps.ecosystem}`,
             category: "hardcoded-port",
@@ -156,20 +179,11 @@ export const hardcodedPortsRule: Rule = {
             filePath: file.filePath,
             line: lineNum,
             column: col,
-            matchedText: match[0],
+            matchedText: String(port),
             message: `${patDef.description}: port ${port}`,
             context: lineContent.trim(),
             ecosystem: ps.ecosystem,
-            suggestedFix: ps.fixTemplates["hardcoded-port"]
-              ? {
-                  description: ps.fixTemplates["hardcoded-port"]!.description,
-                  replacement: ps.fixTemplates[
-                    "hardcoded-port"
-                  ]!.envVarPattern.replace("$ORIGINAL", String(port)),
-                  confidence: "review",
-                  docUrl: "https://isolint.dev/docs/rules/hardcoded-ports",
-                }
-              : undefined,
+            suggestedFix: fix,
           });
         }
       }
@@ -224,13 +238,10 @@ export const hardcodedPortsRule: Rule = {
         context: lineContent.trim(),
         ecosystem: eco !== "unknown" ? eco : undefined,
         suggestedFix: {
-          description:
-            fixTemplate?.description ||
-            "Use an environment variable instead of a hardcoded localhost URL",
-          replacement: fixTemplate
-            ? fixTemplate.envVarPattern.replace("$ORIGINAL", String(port))
-            : `process.env.PORT || ${port}`,
-          confidence: "review",
+          description: "Use an environment variable for the port in this URL",
+          replacement: match[0],
+          confidence: "manual",
+          howToApply: `Extract the port to an environment variable and build the URL dynamically (e.g., \`http://localhost:\${PORT}\` where PORT defaults to ${port})`,
           docUrl: "https://isolint.dev/docs/rules/hardcoded-ports",
         },
       });
@@ -305,16 +316,79 @@ function buildDotnetPortFinding(
     message: `${description}: port ${port}`,
     context: lineContent.trim(),
     ecosystem: ps.ecosystem,
-    suggestedFix: ps.fixTemplates["hardcoded-port"]
-      ? {
-          description: ps.fixTemplates["hardcoded-port"]!.description,
-          replacement: ps.fixTemplates[
-            "hardcoded-port"
-          ]!.envVarPattern.replace("$ORIGINAL", String(port)),
-          confidence: "review",
-          docUrl: "https://isolint.dev/docs/rules/hardcoded-ports",
-        }
-      : undefined,
+    suggestedFix: {
+      description: "Move this port to an environment variable — JSON config files cannot use inline expressions",
+      replacement: `:${port}`,
+      confidence: "manual",
+      howToApply: `Set the port via ASPNETCORE_URLS or ASPNETCORE_HTTP_PORTS environment variable instead of hardcoding in JSON (e.g., ASPNETCORE_HTTP_PORTS=${port})`,
+      docUrl: "https://isolint.dev/docs/rules/hardcoded-ports",
+    },
+  };
+}
+
+/** Build a file-format-aware suggestedFix for a hardcoded port in source/config. */
+function buildPortFix(
+  ps: LangPatternSet,
+  port: number,
+  format: FileFormat,
+  file: FileContext,
+): Finding['suggestedFix'] {
+  const template = ps.fixTemplates['hardcoded-port'];
+  if (!template) return undefined;
+
+  const portStr = String(port);
+
+  // JSON / XML: can't use inline env expressions
+  if (format === 'json' || format === 'xml') {
+    return {
+      description: 'This config format does not support inline expressions — move the port to an environment variable',
+      replacement: portStr,
+      confidence: 'manual',
+      howToApply: `Set the port via an environment variable (e.g., PORT=${port}) and configure the application to read it at startup`,
+      docUrl: 'https://isolint.dev/docs/rules/hardcoded-ports',
+    };
+  }
+
+  // .properties / .ini: Spring-style placeholder works
+  if (format === 'properties') {
+    return {
+      description: template.description,
+      replacement: `\${PORT:${port}}`,
+      confidence: 'auto',
+      docUrl: 'https://isolint.dev/docs/rules/hardcoded-ports',
+    };
+  }
+
+  // YAML: ${VAR:-default} is supported by docker-compose/Spring but not all YAML consumers
+  if (format === 'yaml') {
+    return {
+      description: template.description,
+      replacement: `\${PORT:-${port}}`,
+      confidence: 'review',
+      docUrl: 'https://isolint.dev/docs/rules/hardcoded-ports',
+    };
+  }
+
+  // Source code: Go/Rust have ports inside string literals — can't replace bare number
+  if (STRING_EMBEDDED_PORT_ECOSYSTEMS.includes(ps.ecosystem)) {
+    return {
+      description: template.description,
+      replacement: portStr,
+      confidence: 'manual',
+      howToApply: `Extract the port to an environment variable and build the address string dynamically (e.g., ":" + ${template.envVarPattern.replace('$ORIGINAL', portStr)})`,
+      docUrl: 'https://isolint.dev/docs/rules/hardcoded-ports',
+    };
+  }
+
+  // Source code: ecosystems with valid bare-numeric replacement
+  const replacement = template.envVarPattern.replace('$ORIGINAL', portStr);
+  const confidence: FixConfidence = AUTO_FIX_ECOSYSTEMS.includes(ps.ecosystem) ? 'auto' : 'review';
+
+  return {
+    description: template.description,
+    replacement,
+    confidence,
+    docUrl: 'https://isolint.dev/docs/rules/hardcoded-ports',
   };
 }
 
@@ -342,11 +416,11 @@ function detectEnvPorts(file: FileContext): Finding[] {
       context: file.lines[lineNum - 1]?.trim() || match[0],
       suggestedFix: {
         description: `Each worktree needs a unique ${varName}. Set a different value in each worktree's .env file.`,
-        replacement: `${varName}=\${${varName}:-${port}}`,
+        replacement: match[0],
         confidence: "manual",
-        howToApply: `Open .env in each worktree and assign a unique port (e.g., ${port}, ${
+        howToApply: `Set a unique ${varName} in each worktree's .env (e.g., ${port}, ${
           port + 1
-        }, ${port + 2})`,
+        }, ${port + 2}). Consider using a tool like worktrunk or direnv to automate this.`,
         docUrl: "https://isolint.dev/docs/rules/hardcoded-ports",
       },
     });
@@ -370,6 +444,11 @@ function detectDockerComposePorts(file: FileContext): Finding[] {
     // Skip if already using variable interpolation
     if (match[0].includes("${")) continue;
 
+    // matchedText = just the port mapping value (e.g. "3000:3000" or 3000:3000)
+    // so replaceAll splices cleanly without disrupting surrounding YAML structure
+    const rawMapping = match[0].trim().replace(/^-\s*/, '');
+    const unquoted = rawMapping.replace(/^["']|["']$/g, '');
+
     findings.push({
       ruleId: "hardcoded-ports/docker-compose",
       category: "hardcoded-port",
@@ -377,13 +456,13 @@ function detectDockerComposePorts(file: FileContext): Finding[] {
       filePath: file.filePath,
       line: lineNum,
       column: 1,
-      matchedText: match[0].trim(),
+      matchedText: unquoted,
       message: `Fixed Docker port mapping ${hostPort}:${containerPort} — host port will conflict across worktrees`,
       context: file.lines[lineNum - 1]?.trim() || match[0].trim(),
       suggestedFix: {
         description: `Set HOST_PORT in each worktree's .env to avoid port collisions on the host`,
-        replacement: `      - "\${HOST_PORT:-${hostPort}}:${containerPort}"`,
-        confidence: "review",
+        replacement: `\${HOST_PORT:-${hostPort}}:${containerPort}`,
+        confidence: "auto",
         docUrl: "https://isolint.dev/docs/rules/hardcoded-ports",
       },
     });
@@ -422,11 +501,10 @@ function detectDockerfilePorts(file: FileContext): Finding[] {
       message: `Hardcoded EXPOSE ${port} in Dockerfile`,
       context: file.lines[lineNum - 1]?.trim() || match[0],
       suggestedFix: {
-        description: `Use a build ARG to make the port overridable per worktree: docker build --build-arg PORT=${
-          port + 1
-        }`,
-        replacement: `ARG PORT=${port}\nEXPOSE $PORT`,
-        confidence: "review",
+        description: `Use a build ARG to make the port overridable per worktree`,
+        replacement: match[0],
+        confidence: "manual",
+        howToApply: `Add \`ARG PORT=${port}\` before this line and change to \`EXPOSE $PORT\`. Then build with \`docker build --build-arg PORT=<port>\` per worktree.`,
         docUrl: "https://isolint.dev/docs/rules/hardcoded-ports",
       },
     });
