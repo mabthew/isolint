@@ -1,6 +1,7 @@
 import { Rule, Finding, FileContext, LangPatternSet, lineNumberAt } from '../types.js';
 import { HARDCODED_PATH_PREFIXES, SAFE_PATH_PREFIXES } from '../lang/patterns.js';
 import { ecosystemForExtension } from '../lang/index.js';
+import { isAstAvailable, EXT_TO_LANG, astDetectAbsolutePaths, isParityMode, logParityDivergences } from '../ast-detect.js';
 
 /** Match absolute paths that look like user home directories or project roots. */
 const USER_HOME_PATTERN = /(?:\/Users\/\w+|\/home\/\w+|C:\\Users\\\w+)(?:[/\\][^\s"'`,:;)}\]]+)+/g;
@@ -19,77 +20,95 @@ export const absolutePathsRule: Rule = {
   defaultSeverity: 'critical',
   filePatterns: ['**/*'],
   detect(file: FileContext, langPatterns: LangPatternSet[]): Finding[] {
-    const findings: Finding[] = [];
-
     // Skip binary-looking content
-    if (file.content.includes('\0')) return findings;
+    if (file.content.includes('\0')) return [];
 
-    const patterns = [
-      { regex: USER_HOME_PATTERN, desc: 'Hardcoded user home directory path' },
-      { regex: WINDOWS_DRIVE_PATTERN, desc: 'Hardcoded Windows drive path' },
-      { regex: SERVER_PATH_PATTERN, desc: 'Hardcoded server deployment path' },
-    ];
-
-    for (const { regex, desc } of patterns) {
-      const re = new RegExp(regex.source, regex.flags);
-      let match: RegExpExecArray | null;
-      while ((match = re.exec(file.content)) !== null) {
-        const matchedPath = match[0];
-
-        // Skip safe system paths
-        if (SAFE_PATH_PREFIXES.some(prefix => matchedPath.startsWith(prefix))) continue;
-
-        // Skip if in a comment about paths (e.g., "# Default path is /home/user/...")
-        const lineNum = lineNumberAt(file.lineOffsets, match.index);
-        const lineContent = file.lines[lineNum - 1] || '';
-
-        // Skip lines that are pure comments
-        const trimmedLine = lineContent.trim();
-        if (trimmedLine.startsWith('//') || trimmedLine.startsWith('#') || trimmedLine.startsWith('*') || trimmedLine.startsWith('<!--')) {
-          continue;
+    // Try AST first for JS/TS files
+    if (isAstAvailable() && EXT_TO_LANG[file.extension]) {
+      const astResult = astDetectAbsolutePaths(file, langPatterns);
+      if (astResult !== null) {
+        if (isParityMode()) {
+          const regexResult = detectPathsRegexPath(file, langPatterns);
+          logParityDivergences('absolute-paths', file.filePath, astResult, regexResult);
         }
-
-        const eco = ecosystemForExtension(file.extension);
-        const relativePath = suggestRelativePath(matchedPath);
-        const fixTemplate = langPatterns
-          .find(p => p.ecosystem === eco)
-          ?.fixTemplates['absolute-path'];
-
-        const replacement = fixTemplate
-          ? fixTemplate.envVarPattern.replace('$RELATIVE', relativePath)
-          : `path.resolve(__dirname, '${relativePath}')`;
-        const fixDescription = fixTemplate
-          ? fixTemplate.description
-          : 'Use a relative path or environment variable';
-
-        findings.push({
-          ruleId: 'absolute-paths/enlistment',
-          category: 'absolute-path',
-          severity: 'critical',
-          filePath: file.filePath,
-          line: lineNum,
-          column: match.index - file.content.lastIndexOf('\n', match.index - 1),
-          matchedText: matchedPath,
-          message: `${desc}: ${matchedPath}`,
-          context: lineContent.trim(),
-          ecosystem: eco !== 'unknown' ? eco : undefined,
-          suggestedFix: {
-            description: fixDescription,
-            replacement,
-            confidence: 'manual',
-            howToApply: 'Replace with a relative path or environment variable so it works in any worktree location',
-            docUrl: 'https://isolint.dev/docs/rules/absolute-paths',
-          },
-        });
+        return astResult;
       }
     }
 
-    return findings;
+    // Regex fallback (non-JS/TS files, or AST parse failure)
+    return detectPathsRegexPath(file, langPatterns);
   },
 };
 
+/** Regex-based absolute path detection. Extracted for AST parity validation. */
+export function detectPathsRegexPath(file: FileContext, langPatterns: LangPatternSet[]): Finding[] {
+  const findings: Finding[] = [];
+
+  const patterns = [
+    { regex: USER_HOME_PATTERN, desc: 'Hardcoded user home directory path' },
+    { regex: WINDOWS_DRIVE_PATTERN, desc: 'Hardcoded Windows drive path' },
+    { regex: SERVER_PATH_PATTERN, desc: 'Hardcoded server deployment path' },
+  ];
+
+  for (const { regex, desc } of patterns) {
+    const re = new RegExp(regex.source, regex.flags);
+    let match: RegExpExecArray | null;
+    while ((match = re.exec(file.content)) !== null) {
+      const matchedPath = match[0];
+
+      // Skip safe system paths
+      if (SAFE_PATH_PREFIXES.some(prefix => matchedPath.startsWith(prefix))) continue;
+
+      // Skip if in a comment about paths (e.g., "# Default path is /home/user/...")
+      const lineNum = lineNumberAt(file.lineOffsets, match.index);
+      const lineContent = file.lines[lineNum - 1] || '';
+
+      // Skip lines that are pure comments
+      const trimmedLine = lineContent.trim();
+      if (trimmedLine.startsWith('//') || trimmedLine.startsWith('#') || trimmedLine.startsWith('*') || trimmedLine.startsWith('<!--')) {
+        continue;
+      }
+
+      const eco = ecosystemForExtension(file.extension);
+      const relativePath = suggestRelativePath(matchedPath);
+      const fixTemplate = langPatterns
+        .find(p => p.ecosystem === eco)
+        ?.fixTemplates['absolute-path'];
+
+      const replacement = fixTemplate
+        ? fixTemplate.envVarPattern.replace('$RELATIVE', relativePath)
+        : `path.resolve(__dirname, '${relativePath}')`;
+      const fixDescription = fixTemplate
+        ? fixTemplate.description
+        : 'Use a relative path or environment variable';
+
+      findings.push({
+        ruleId: 'absolute-paths/enlistment',
+        category: 'absolute-path',
+        severity: 'critical',
+        filePath: file.filePath,
+        line: lineNum,
+        column: match.index - file.content.lastIndexOf('\n', match.index - 1),
+        matchedText: matchedPath,
+        message: `${desc}: ${matchedPath}`,
+        context: lineContent.trim(),
+        ecosystem: eco !== 'unknown' ? eco : undefined,
+        suggestedFix: {
+          description: fixDescription,
+          replacement,
+          confidence: 'manual',
+          howToApply: 'Replace with a relative path or environment variable so it works in any worktree location',
+          docUrl: 'https://isolint.dev/docs/rules/absolute-paths',
+        },
+      });
+    }
+  }
+
+  return findings;
+}
+
 /** Try to extract a useful relative path suggestion from an absolute path. */
-function suggestRelativePath(absPath: string): string {
+export function suggestRelativePath(absPath: string): string {
   // Strip the user-specific prefix, keep the project-relative part
   const parts = absPath.replace(/\\/g, '/').split('/');
   // Find a likely project root indicator

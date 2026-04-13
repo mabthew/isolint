@@ -2,6 +2,7 @@ import { AuditConfig, AuditReport, CategorySummary, ContextLine, Finding, LangPa
 import { discoverFiles, readFileContext } from './scanner.js';
 import { detectEcosystems, getPatternSets } from './lang/index.js';
 import { getAllRules } from './rules/index.js';
+import { initAstGrep, isAstAvailable, setParityMode } from './ast-detect.js';
 
 const SEVERITY_ORDER: Record<Severity, number> = {
   critical: 0,
@@ -20,6 +21,13 @@ export async function runAudit(config: AuditConfig): Promise<AuditReport> {
   // 1. Detect ecosystems
   const profile: RepoProfile = detectEcosystems(config.rootDir);
   const patternSets: LangPatternSet[] = getPatternSets(profile);
+
+  // Initialize AST-grep (regular dep — try/catch is a safety net for exotic platforms)
+  await initAstGrep();
+  if (config.verbose) {
+    setParityMode(true);
+    console.error(`AST-grep available: ${isAstAvailable()}`);
+  }
 
   if (config.verbose) {
     const ecoList = profile.ecosystems.filter(e => e !== 'unknown');

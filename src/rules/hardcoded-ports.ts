@@ -13,6 +13,7 @@ import {
   WELL_KNOWN_SERVICE_PORTS,
 } from "../lang/patterns.js";
 import { ecosystemForExtension } from "../lang/index.js";
+import { isAstAvailable, EXT_TO_LANG, astDetectPorts, isParityMode, logParityDivergences } from '../ast-detect.js';
 
 /** Check if a line is a comment (handles //, #, *, <!--, --, %) */
 function isCommentLine(line: string): boolean {
@@ -32,7 +33,7 @@ function isCommentLine(line: string): boolean {
 
 type FileFormat = 'json' | 'yaml' | 'properties' | 'xml' | 'shell' | 'source';
 
-function getFileFormat(file: FileContext): FileFormat {
+export function getFileFormat(file: FileContext): FileFormat {
   if (file.extension === '.json') return 'json';
   if (file.extension === '.yml' || file.extension === '.yaml') return 'yaml';
   if (file.extension === '.properties' || file.extension === '.ini') return 'properties';
@@ -101,161 +102,179 @@ export const hardcodedPortsRule: Rule = {
       return findings;
     }
 
-    // 3. Source code — use ecosystem-specific patterns + universal patterns
-    const eco = ecosystemForExtension(file.extension);
-    const relevantPatterns = langPatterns.filter(
-      (p) =>
-        p.sourceExtensions.includes(file.extension) ||
-        eco === p.ecosystem ||
-        matchesConfigFileGlob(file, p.configFileGlobs),
-    );
-
-    // Run ecosystem-specific port patterns
-    for (const ps of relevantPatterns) {
-      for (const patDef of ps.portBindingPatterns) {
-        const regex = new RegExp(patDef.pattern.source, patDef.pattern.flags);
-        let match: RegExpExecArray | null;
-        while ((match = regex.exec(file.content)) !== null) {
-          const lineNum = lineNumberAt(file.lineOffsets, match.index);
-          const lineContent = file.lines[lineNum - 1] || "";
-          const col =
-            match.index - file.content.lastIndexOf("\n", match.index - 1);
-
-          // Skip comments
-          if (isCommentLine(lineContent)) continue;
-
-          // Skip if line looks like it already uses an env var
-          if (
-            lineContent.includes("process.env") ||
-            lineContent.includes("os.environ") ||
-            lineContent.includes("os.Getenv") ||
-            lineContent.includes("env::var") ||
-            lineContent.includes("ENV[") ||
-            lineContent.includes("${")
-          )
-            continue;
-
-          // Special case: applicationUrl can contain multiple semicolon-separated URLs
-          // e.g. "https://localhost:5243;http://localhost:5223" → emit one finding per port
-          if (patDef.description.includes("applicationUrl")) {
-            const urlValue = match[1];
-            const portRegex = /:(\d{4,5})\b/g;
-            let portMatch: RegExpExecArray | null;
-            while ((portMatch = portRegex.exec(urlValue)) !== null) {
-              const port = parseInt(portMatch[1], 10);
-              findings.push(
-                buildDotnetPortFinding(
-                  ps,
-                  patDef.description,
-                  port,
-                  file.filePath,
-                  lineNum,
-                  col,
-                  lineContent,
-                ),
-              );
-            }
-            continue;
-          }
-
-          const port = parseInt(match[1], 10);
-          if (
-            !isUnambiguousPortContext(patDef.description) &&
-            !isLikelyPort(port)
-          )
-            continue;
-
-          // For the broad "port: NNNN" pattern, apply stricter context filtering
-          if (
-            patDef.description.includes("Port assignment") &&
-            !hasPortContext(lineContent)
-          )
-            continue;
-
-          const format = getFileFormat(file);
-          const isUrlEmbedded = URL_EMBEDDED_PATTERN_KEYWORDS.some(
-            kw => patDef.description.toLowerCase().includes(kw),
-          );
-          const fix = buildPortFix(ps, port, format, file, isUrlEmbedded);
-
-          findings.push({
-            ruleId: `hardcoded-ports/${ps.ecosystem}`,
-            category: "hardcoded-port",
-            severity: "high",
-            filePath: file.filePath,
-            line: lineNum,
-            column: col,
-            matchedText: String(port),
-            message: `${patDef.description}: port ${port}`,
-            context: lineContent.trim(),
-            ecosystem: ps.ecosystem,
-            suggestedFix: fix,
-          });
+    // 3. Source code — try AST first for JS/TS files
+    if (isAstAvailable() && EXT_TO_LANG[file.extension]) {
+      const astResult = astDetectPorts(file, langPatterns);
+      if (astResult !== null) {
+        if (isParityMode()) {
+          const regexResult = detectPortsRegexPath(file, langPatterns);
+          logParityDivergences('hardcoded-ports', file.filePath, astResult, regexResult);
         }
+        return astResult;
       }
     }
 
-    // Universal localhost:port pattern (works in any file type)
-    const localhostRegex = new RegExp(
-      LOCALHOST_PORT_PATTERN.source,
-      LOCALHOST_PORT_PATTERN.flags,
-    );
-    let match: RegExpExecArray | null;
-    while ((match = localhostRegex.exec(file.content)) !== null) {
-      const port = parseInt(match[1], 10);
-      if (!isLikelyPort(port)) continue;
-
-      const lineNum = lineNumberAt(file.lineOffsets, match.index);
-      const lineContent = file.lines[lineNum - 1] || "";
-
-      // Skip if already found by ecosystem-specific pattern
-      if (
-        findings.some((f) => f.line === lineNum && f.filePath === file.filePath)
-      )
-        continue;
-
-      // Skip comments
-      if (isCommentLine(lineContent)) continue;
-
-      // Skip if already using env var
-      if (
-        lineContent.includes("process.env") ||
-        lineContent.includes("os.environ") ||
-        lineContent.includes("os.Getenv") ||
-        lineContent.includes("${")
-      )
-        continue;
-
-      // Find ecosystem-specific fix template for the port
-      const fixTemplate =
-        relevantPatterns.length > 0
-          ? relevantPatterns[0].fixTemplates["hardcoded-port"]
-          : undefined;
-
-      findings.push({
-        ruleId: "hardcoded-ports/localhost",
-        category: "hardcoded-port",
-        severity: WELL_KNOWN_SERVICE_PORTS.has(port) ? "high" : "medium",
-        filePath: file.filePath,
-        line: lineNum,
-        column: match.index - file.content.lastIndexOf("\n", match.index - 1),
-        matchedText: match[0],
-        message: `Hardcoded localhost URL with port ${port}`,
-        context: lineContent.trim(),
-        ecosystem: eco !== "unknown" ? eco : undefined,
-        suggestedFix: {
-          description: "Use an environment variable for the port in this URL",
-          replacement: match[0],
-          confidence: "manual",
-          howToApply: `Extract the port to an environment variable and build the URL dynamically (e.g., \`http://localhost:\${PORT}\` where PORT defaults to ${port})`,
-          docUrl: "https://isolint.dev/docs/rules/hardcoded-ports",
-        },
-      });
-    }
-
-    return findings;
+    // Regex fallback (non-JS/TS files, or AST parse failure)
+    return detectPortsRegexPath(file, langPatterns);
   },
 };
+
+/** Regex-based source code port detection. Extracted for AST parity validation. */
+export function detectPortsRegexPath(file: FileContext, langPatterns: LangPatternSet[]): Finding[] {
+  const findings: Finding[] = [];
+  const eco = ecosystemForExtension(file.extension);
+  const relevantPatterns = langPatterns.filter(
+    (p) =>
+      p.sourceExtensions.includes(file.extension) ||
+      eco === p.ecosystem ||
+      matchesConfigFileGlob(file, p.configFileGlobs),
+  );
+
+  // Run ecosystem-specific port patterns
+  for (const ps of relevantPatterns) {
+    for (const patDef of ps.portBindingPatterns) {
+      const regex = new RegExp(patDef.pattern.source, patDef.pattern.flags);
+      let match: RegExpExecArray | null;
+      while ((match = regex.exec(file.content)) !== null) {
+        const lineNum = lineNumberAt(file.lineOffsets, match.index);
+        const lineContent = file.lines[lineNum - 1] || "";
+        const col =
+          match.index - file.content.lastIndexOf("\n", match.index - 1);
+
+        // Skip comments
+        if (isCommentLine(lineContent)) continue;
+
+        // Skip if line looks like it already uses an env var
+        if (
+          lineContent.includes("process.env") ||
+          lineContent.includes("os.environ") ||
+          lineContent.includes("os.Getenv") ||
+          lineContent.includes("env::var") ||
+          lineContent.includes("ENV[") ||
+          lineContent.includes("${")
+        )
+          continue;
+
+        // Special case: applicationUrl can contain multiple semicolon-separated URLs
+        // e.g. "https://localhost:5243;http://localhost:5223" → emit one finding per port
+        if (patDef.description.includes("applicationUrl")) {
+          const urlValue = match[1];
+          const portRegex = /:(\d{4,5})\b/g;
+          let portMatch: RegExpExecArray | null;
+          while ((portMatch = portRegex.exec(urlValue)) !== null) {
+            const port = parseInt(portMatch[1], 10);
+            findings.push(
+              buildDotnetPortFinding(
+                ps,
+                patDef.description,
+                port,
+                file.filePath,
+                lineNum,
+                col,
+                lineContent,
+              ),
+            );
+          }
+          continue;
+        }
+
+        const port = parseInt(match[1], 10);
+        if (
+          !isUnambiguousPortContext(patDef.description) &&
+          !isLikelyPort(port)
+        )
+          continue;
+
+        // For the broad "port: NNNN" pattern, apply stricter context filtering
+        if (
+          patDef.description.includes("Port assignment") &&
+          !hasPortContext(lineContent)
+        )
+          continue;
+
+        const format = getFileFormat(file);
+        const isUrlEmbedded = URL_EMBEDDED_PATTERN_KEYWORDS.some(
+          kw => patDef.description.toLowerCase().includes(kw),
+        );
+        const fix = buildPortFix(ps, port, format, file, isUrlEmbedded);
+
+        findings.push({
+          ruleId: `hardcoded-ports/${ps.ecosystem}`,
+          category: "hardcoded-port",
+          severity: "high",
+          filePath: file.filePath,
+          line: lineNum,
+          column: col,
+          matchedText: String(port),
+          message: `${patDef.description}: port ${port}`,
+          context: lineContent.trim(),
+          ecosystem: ps.ecosystem,
+          suggestedFix: fix,
+        });
+      }
+    }
+  }
+
+  // Universal localhost:port pattern (works in any file type)
+  const localhostRegex = new RegExp(
+    LOCALHOST_PORT_PATTERN.source,
+    LOCALHOST_PORT_PATTERN.flags,
+  );
+  let match: RegExpExecArray | null;
+  while ((match = localhostRegex.exec(file.content)) !== null) {
+    const port = parseInt(match[1], 10);
+    if (!isLikelyPort(port)) continue;
+
+    const lineNum = lineNumberAt(file.lineOffsets, match.index);
+    const lineContent = file.lines[lineNum - 1] || "";
+
+    // Skip if already found by ecosystem-specific pattern
+    if (
+      findings.some((f) => f.line === lineNum && f.filePath === file.filePath)
+    )
+      continue;
+
+    // Skip comments
+    if (isCommentLine(lineContent)) continue;
+
+    // Skip if already using env var
+    if (
+      lineContent.includes("process.env") ||
+      lineContent.includes("os.environ") ||
+      lineContent.includes("os.Getenv") ||
+      lineContent.includes("${")
+    )
+      continue;
+
+    // Find ecosystem-specific fix template for the port
+    const fixTemplate =
+      relevantPatterns.length > 0
+        ? relevantPatterns[0].fixTemplates["hardcoded-port"]
+        : undefined;
+
+    findings.push({
+      ruleId: "hardcoded-ports/localhost",
+      category: "hardcoded-port",
+      severity: WELL_KNOWN_SERVICE_PORTS.has(port) ? "high" : "medium",
+      filePath: file.filePath,
+      line: lineNum,
+      column: match.index - file.content.lastIndexOf("\n", match.index - 1),
+      matchedText: match[0],
+      message: `Hardcoded localhost URL with port ${port}`,
+      context: lineContent.trim(),
+      ecosystem: eco !== "unknown" ? eco : undefined,
+      suggestedFix: {
+        description: "Use an environment variable for the port in this URL",
+        replacement: match[0],
+        confidence: "manual",
+        howToApply: `Extract the port to an environment variable and build the URL dynamically (e.g., \`http://localhost:\${PORT}\` where PORT defaults to ${port})`,
+        docUrl: "https://isolint.dev/docs/rules/hardcoded-ports",
+      },
+    });
+  }
+
+  return findings;
+}
 
 /**
  * Check if a file matches any of the given config file globs.
@@ -333,7 +352,7 @@ function buildDotnetPortFinding(
 }
 
 /** Build a file-format-aware suggestedFix for a hardcoded port in source/config. */
-function buildPortFix(
+export function buildPortFix(
   ps: LangPatternSet,
   port: number,
   format: FileFormat,

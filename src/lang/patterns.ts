@@ -48,6 +48,10 @@ export const PORT_NEGATIVE_KEYWORDS = [
   'maxRetries', 'retries', 'attempts', 'max_retries',
   'buffer', 'chunk', 'batch', 'limit', 'pageSize',
   'weight', 'score', 'priority', 'order',
+  // Error-code constants (avoid flagging UV/POSIX error tables as ports)
+  'errno', 'EADDR', 'EACCES', 'ECONN', 'ENOENT', 'EPERM',
+  // Duration/TTL constants (avoid flagging cache TTLs as ports)
+  'ttl', 'TTL', 'max_age', 'maxAge', 'MAX_AGE', 'expir',
 ];
 
 /** Absolute path prefixes that indicate a hardcoded enlistment root. */
