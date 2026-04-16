@@ -9,8 +9,6 @@ import { ecosystemForExtension } from './lang/index.js';
 
 // null = not yet attempted, false = unavailable (native binary failed), object = loaded
 let _astMod: any | false = null;
-let _parityMode = false;
-
 /** Warm the ast-grep cache. Call once at engine startup. */
 export async function initAstGrep(): Promise<boolean> {
   if (_astMod !== null) return _astMod !== false;
@@ -27,9 +25,6 @@ export async function initAstGrep(): Promise<boolean> {
 export function isAstAvailable(): boolean {
   return _astMod !== null && _astMod !== false;
 }
-
-export function setParityMode(v: boolean): void { _parityMode = v; }
-export function isParityMode(): boolean { return _parityMode; }
 
 // ---------------------------------------------------------------------------
 // Extension → language mapping (Phase A: JS/TS only)
@@ -915,36 +910,3 @@ export function astDetectTempDirectories(
   return findings;
 }
 
-// ---------------------------------------------------------------------------
-// Parity validation
-// ---------------------------------------------------------------------------
-
-/**
- * Compare AST and regex findings and log any misses to stderr.
- * Only runs when verbose/parity mode is enabled.
- */
-export function logParityDivergences(
-  ruleName: string,
-  filePath: string,
-  astFindings: Finding[],
-  regexFindings: Finding[],
-): void {
-  const astLines = new Set(astFindings.map(f => f.line));
-  for (const rf of regexFindings) {
-    if (!astLines.has(rf.line)) {
-      console.error(
-        `[ast-parity] ${ruleName} MISS in ${filePath}:${rf.line} — ` +
-        `regex found "${rf.matchedText}" but AST did not`,
-      );
-    }
-  }
-  const regexLines = new Set(regexFindings.map(f => f.line));
-  for (const af of astFindings) {
-    if (!regexLines.has(af.line)) {
-      console.error(
-        `[ast-parity] ${ruleName} EXTRA in ${filePath}:${af.line} — ` +
-        `AST found "${af.matchedText}" but regex did not`,
-      );
-    }
-  }
-}

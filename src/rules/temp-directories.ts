@@ -1,5 +1,5 @@
 import { Rule, Finding, FileContext, LangPatternSet, lineNumberAt } from '../types.js';
-import { isAstAvailable, EXT_TO_LANG, astDetectTempDirectories, isParityMode, logParityDivergences } from '../ast-detect.js';
+import { isAstAvailable, EXT_TO_LANG, astDetectTempDirectories } from '../ast-detect.js';
 
 /** Patterns for hardcoded temp directory usage. */
 const TEMP_DIR_PATTERNS = [
@@ -20,13 +20,7 @@ export const tempDirectoriesRule: Rule = {
     // AST path for JS/TS source files
     if (isAstAvailable() && EXT_TO_LANG[file.extension]) {
       const astResult = astDetectTempDirectories(file, langPatterns);
-      if (astResult !== null) {
-        if (isParityMode()) {
-          const regexResult = detectTempDirsRegexPath(file);
-          logParityDivergences('temp-directories', file.filePath, astResult, regexResult);
-        }
-        return astResult;
-      }
+      if (astResult !== null) return astResult;
     }
     return detectTempDirsRegexPath(file);
   },

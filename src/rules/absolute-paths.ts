@@ -1,7 +1,7 @@
 import { Rule, Finding, FileContext, LangPatternSet, lineNumberAt } from '../types.js';
 import { HARDCODED_PATH_PREFIXES, SAFE_PATH_PREFIXES } from '../lang/patterns.js';
 import { ecosystemForExtension } from '../lang/index.js';
-import { isAstAvailable, EXT_TO_LANG, astDetectAbsolutePaths, isParityMode, logParityDivergences } from '../ast-detect.js';
+import { isAstAvailable, EXT_TO_LANG, astDetectAbsolutePaths } from '../ast-detect.js';
 
 /** Match absolute paths that look like user home directories or project roots. */
 const USER_HOME_PATTERN = /(?:\/Users\/\w+|\/home\/\w+|C:\\Users\\\w+)(?:[/\\][^\s"'`,:;)}\]]+)+/g;
@@ -26,13 +26,7 @@ export const absolutePathsRule: Rule = {
     // Try AST first for JS/TS files
     if (isAstAvailable() && EXT_TO_LANG[file.extension]) {
       const astResult = astDetectAbsolutePaths(file, langPatterns);
-      if (astResult !== null) {
-        if (isParityMode()) {
-          const regexResult = detectPathsRegexPath(file, langPatterns);
-          logParityDivergences('absolute-paths', file.filePath, astResult, regexResult);
-        }
-        return astResult;
-      }
+      if (astResult !== null) return astResult;
     }
 
     // Regex fallback (non-JS/TS files, or AST parse failure)

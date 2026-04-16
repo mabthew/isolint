@@ -1,6 +1,6 @@
 import { Rule, Finding, FileContext, LangPatternSet, lineNumberAt } from '../types.js';
 import { ecosystemForExtension } from '../lang/index.js';
-import { isAstAvailable, EXT_TO_LANG, astDetectPidAndSockets, isParityMode, logParityDivergences } from '../ast-detect.js';
+import { isAstAvailable, EXT_TO_LANG, astDetectPidAndSockets } from '../ast-detect.js';
 
 /** Universal PID file patterns. */
 const PID_FILE_PATTERN = /["']?([^\s"']*\.pid)["']?/g;
@@ -25,13 +25,7 @@ export const pidAndSocketsRule: Rule = {
     // AST path for JS/TS source files
     if (isAstAvailable() && EXT_TO_LANG[file.extension]) {
       const astResult = astDetectPidAndSockets(file, langPatterns);
-      if (astResult !== null) {
-        if (isParityMode()) {
-          const regexResult = detectPidSocketsRegexPath(file, langPatterns);
-          logParityDivergences('pid-and-sockets', file.filePath, astResult, regexResult);
-        }
-        return astResult;
-      }
+      if (astResult !== null) return astResult;
     }
     return detectPidSocketsRegexPath(file, langPatterns);
   },

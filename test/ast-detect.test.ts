@@ -5,9 +5,8 @@ import {
   astDetectPorts, astDetectAbsolutePaths,
   astDetectDatabaseStrings, astDetectPidAndSockets,
   astDetectLogFilePaths, astDetectTempDirectories,
-  logParityDivergences,
 } from '../src/ast-detect.js';
-import { FileContext, Finding } from '../src/types.js';
+import { FileContext } from '../src/types.js';
 import { getPatternSets } from '../src/lang/index.js';
 
 function makeFile(content: string, filePath = 'server.ts', basename?: string): FileContext {
@@ -498,79 +497,3 @@ describe('astDetectTempDirectories', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// logParityDivergences
-// ---------------------------------------------------------------------------
-
-describe('logParityDivergences', () => {
-  it('logs when regex finds something AST missed', () => {
-    const logs: string[] = [];
-    const origError = console.error;
-    console.error = (...args: unknown[]) => { logs.push(args.join(' ')); };
-
-    const astFindings: Finding[] = [];
-    const regexFindings: Finding[] = [{
-      ruleId: 'hardcoded-ports/node',
-      category: 'hardcoded-port',
-      severity: 'high',
-      filePath: 'test.ts',
-      line: 5,
-      column: 1,
-      matchedText: '3000',
-      message: 'test',
-      context: 'test',
-    }];
-
-    logParityDivergences('hardcoded-ports', 'test.ts', astFindings, regexFindings);
-    console.error = origError;
-
-    assert.ok(logs.some(l => l.includes('[ast-parity]') && l.includes('MISS')));
-  });
-
-  it('logs when AST finds something regex missed', () => {
-    const logs: string[] = [];
-    const origError = console.error;
-    console.error = (...args: unknown[]) => { logs.push(args.join(' ')); };
-
-    const astFindings: Finding[] = [{
-      ruleId: 'hardcoded-ports/node',
-      category: 'hardcoded-port',
-      severity: 'high',
-      filePath: 'test.ts',
-      line: 5,
-      column: 1,
-      matchedText: '3000',
-      message: 'test',
-      context: 'test',
-    }];
-    const regexFindings: Finding[] = [];
-
-    logParityDivergences('hardcoded-ports', 'test.ts', astFindings, regexFindings);
-    console.error = origError;
-
-    assert.ok(logs.some(l => l.includes('[ast-parity]') && l.includes('EXTRA')));
-  });
-
-  it('logs nothing when both agree', () => {
-    const logs: string[] = [];
-    const origError = console.error;
-    console.error = (...args: unknown[]) => { logs.push(args.join(' ')); };
-
-    const findings: Finding[] = [{
-      ruleId: 'hardcoded-ports/node',
-      category: 'hardcoded-port',
-      severity: 'high',
-      filePath: 'test.ts',
-      line: 5,
-      column: 1,
-      matchedText: '3000',
-      message: 'test',
-      context: 'test',
-    }];
-
-    logParityDivergences('hardcoded-ports', 'test.ts', findings, findings);
-    console.error = origError;
-
-    assert.equal(logs.length, 0, 'should not log when both agree');
-  });
-});

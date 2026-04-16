@@ -13,7 +13,7 @@ import {
   WELL_KNOWN_SERVICE_PORTS,
 } from "../lang/patterns.js";
 import { ecosystemForExtension } from "../lang/index.js";
-import { isAstAvailable, EXT_TO_LANG, astDetectPorts, isParityMode, logParityDivergences } from '../ast-detect.js';
+import { isAstAvailable, EXT_TO_LANG, astDetectPorts } from '../ast-detect.js';
 
 /** Check if a line is a comment (handles //, #, *, <!--, --, %) */
 function isCommentLine(line: string): boolean {
@@ -105,13 +105,7 @@ export const hardcodedPortsRule: Rule = {
     // 3. Source code — try AST first for JS/TS files
     if (isAstAvailable() && EXT_TO_LANG[file.extension]) {
       const astResult = astDetectPorts(file, langPatterns);
-      if (astResult !== null) {
-        if (isParityMode()) {
-          const regexResult = detectPortsRegexPath(file, langPatterns);
-          logParityDivergences('hardcoded-ports', file.filePath, astResult, regexResult);
-        }
-        return astResult;
-      }
+      if (astResult !== null) return astResult;
     }
 
     // Regex fallback (non-JS/TS files, or AST parse failure)

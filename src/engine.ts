@@ -2,7 +2,7 @@ import { AuditConfig, AuditReport, CategorySummary, ContextLine, Finding, LangPa
 import { discoverFiles, readFileContext } from './scanner.js';
 import { detectEcosystems, getPatternSets } from './lang/index.js';
 import { getAllRules } from './rules/index.js';
-import { initAstGrep, isAstAvailable, setParityMode } from './ast-detect.js';
+import { initAstGrep, isAstAvailable } from './ast-detect.js';
 
 const SEVERITY_ORDER: Record<Severity, number> = {
   critical: 0,
@@ -25,7 +25,6 @@ export async function runAudit(config: AuditConfig): Promise<AuditReport> {
   // Initialize AST-grep (regular dep — try/catch is a safety net for exotic platforms)
   await initAstGrep();
   if (config.verbose) {
-    setParityMode(true);
     console.error(`AST-grep available: ${isAstAvailable()}`);
   }
 
