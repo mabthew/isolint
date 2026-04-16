@@ -1,35 +1,10 @@
 import pc from 'picocolors';
 import { AuditReport, Finding, Severity } from '../types.js';
-
-// Single-line gradient logo in white
-// #f59e0b amber — raw ANSI true color since picocolors has no orange
-const AMBER = (s: string) => `\x1b[38;2;245;158;11m${s}\x1b[39m`;
-const LOGO = AMBER('░▒▓█') + pc.bold(AMBER('  i s o l i n t  ')) + AMBER('█▓▒░');
-
-const SEVERITY_COLORS: Record<Severity, (s: string) => string> = {
-  critical: pc.red,
-  high: pc.yellow,
-  medium: pc.cyan,
-  low: pc.gray,
-  info: pc.gray,
-};
-
-// Badges with icons baked in for visual weight
-const SEVERITY_BADGES: Record<Severity, string> = {
-  critical: pc.bgRed(pc.bold(pc.black(' ✖ CRIT '))),
-  high: pc.bgYellow(pc.bold(pc.black(' ▲ HIGH '))),
-  medium: pc.bgCyan(pc.bold(pc.black(' ◆ MED  '))),
-  low: pc.bgWhite(pc.black(' ◉ LOW  ')),
-  info: pc.bgWhite(pc.black(' ○ INFO ')),
-};
-
-const SEVERITY_ICONS: Record<Severity, string> = {
-  critical: '✖',
-  high: '▲',
-  medium: '◆',
-  low: '◉',
-  info: '○',
-};
+import {
+  AMBER, LOGO,
+  SEVERITY_COLORS, SEVERITY_BADGES, SEVERITY_ICONS,
+  stripAnsi, highlightMatch, confidenceLabel,
+} from '../ui.js';
 
 function scoreColor(score: number): (s: string) => string {
   if (score >= 90) return pc.green;
@@ -124,7 +99,6 @@ export function formatTerminalReport(
 
     // Build each summary row, then right-pad to the widest visible width
     // so the doc URLs line up in a column on the right.
-    const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '');
     const rows: Array<{ body: string; docUrl: string | undefined }> = [];
     for (const s of report.summary) {
       const summaryParts: string[] = [];
@@ -279,14 +253,8 @@ export function formatTerminalReport(
    */
   function renderSuggestionBlock(f: Finding, cont: string) {
     const fix = f.suggestedFix!;
-    const confidenceLabel =
-      fix.confidence === 'auto'
-        ? pc.green(pc.bold('auto-fix'))
-        : fix.confidence === 'review'
-          ? pc.yellow('review')
-          : pc.red('manual');
 
-    const header = `${pc.yellow('suggested fix')} · ${confidenceLabel} · ${pc.dim(fix.description)}`;
+    const header = `${pc.yellow('suggested fix')} · ${confidenceLabel(fix.confidence)} · ${pc.dim(fix.description)}`;
     const indent = '     '; // 5 spaces — sits under the gutter body
 
     lines.push(`  ${cont}`);
@@ -304,27 +272,6 @@ export function formatTerminalReport(
     }
 
     lines.push(`  ${cont}${indent}${pc.dim('╰─')}`);
-  }
-
-  /**
-   * Highlight the offending span on a source line by bolding + coloring
-   * the substring that starts at `column` and has length `matchedText.length`.
-   * Falls back to rendering the full line bright if the span can't be located.
-   */
-  function highlightMatch(lineText: string, column: number, matchedText: string, color: (s: string) => string): string {
-    if (!matchedText || column < 1) return color(lineText);
-    // Try the column-based slice first
-    const startIdx = column - 1;
-    const endIdx = startIdx + matchedText.length;
-    if (endIdx <= lineText.length && lineText.slice(startIdx, endIdx) === matchedText) {
-      return lineText.slice(0, startIdx) + color(pc.bold(matchedText)) + lineText.slice(endIdx);
-    }
-    // Fall back to indexOf search — matches may have shifted if context got trimmed
-    const foundIdx = lineText.indexOf(matchedText);
-    if (foundIdx !== -1) {
-      return lineText.slice(0, foundIdx) + color(pc.bold(matchedText)) + lineText.slice(foundIdx + matchedText.length);
-    }
-    return color(lineText);
   }
 
   // Section headers: uppercase bold + heavy divider

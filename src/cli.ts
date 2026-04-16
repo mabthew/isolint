@@ -57,8 +57,8 @@ export function createCli(): Command {
         process.exit(2);
       }
 
-      if (opts.dryRun && !opts.fix) {
-        console.error('--dry-run requires --fix');
+      if (opts.dryRun && !opts.fix && !opts.interactive) {
+        console.error('--dry-run requires --fix or --interactive');
         process.exit(2);
       }
 
@@ -114,7 +114,7 @@ export function createCli(): Command {
 
         // Interactive fix mode
         if (opts.interactive) {
-          await interactiveFix(report);
+          await interactiveFix(report, { dryRun: config.dryRun });
         } else if (config.fix && !config.dryRun) {
           console.log('Applying fixes...\n');
           const result = applyFixes(report, { dryRun: false });
