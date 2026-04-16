@@ -1,5 +1,6 @@
 import { Rule, Finding, FileContext, LangPatternSet, lineNumberAt } from '../types.js';
 import { ecosystemForExtension } from '../lang/index.js';
+import { isAstAvailable, EXT_TO_LANG, astDetectPidAndSockets, isParityMode, logParityDivergences } from '../ast-detect.js';
 
 /** Universal PID file patterns. */
 const PID_FILE_PATTERN = /["']?([^\s"']*\.pid)["']?/g;
@@ -18,10 +19,27 @@ export const pidAndSocketsRule: Rule = {
   defaultSeverity: 'high',
   filePatterns: ['**/*'],
   detect(file: FileContext, langPatterns: LangPatternSet[]): Finding[] {
-    const findings: Finding[] = [];
-
     // Skip node_modules, vendor, etc.
-    if (file.filePath.includes('node_modules/') || file.filePath.includes('vendor/')) return findings;
+    if (file.filePath.includes('node_modules/') || file.filePath.includes('vendor/')) return [];
+
+    // AST path for JS/TS source files
+    if (isAstAvailable() && EXT_TO_LANG[file.extension]) {
+      const astResult = astDetectPidAndSockets(file, langPatterns);
+      if (astResult !== null) {
+        if (isParityMode()) {
+          const regexResult = detectPidSocketsRegexPath(file, langPatterns);
+          logParityDivergences('pid-and-sockets', file.filePath, astResult, regexResult);
+        }
+        return astResult;
+      }
+    }
+    return detectPidSocketsRegexPath(file, langPatterns);
+  },
+};
+
+/** Regex-based PID/socket detection. Extracted for AST parity validation. */
+export function detectPidSocketsRegexPath(file: FileContext, langPatterns: LangPatternSet[]): Finding[] {
+    const findings: Finding[] = [];
 
     // 1. Ecosystem-specific PID/socket patterns
     const eco = ecosystemForExtension(file.extension);
@@ -87,5 +105,4 @@ export const pidAndSocketsRule: Rule = {
     }
 
     return findings;
-  },
-};
+}

@@ -1,6 +1,7 @@
 import { Rule, Finding, FileContext, LangPatternSet, FixConfidence, lineNumberAt } from '../types.js';
 import { DB_URL_PATTERN } from '../lang/patterns.js';
 import { ecosystemForExtension } from '../lang/index.js';
+import { isAstAvailable, EXT_TO_LANG, astDetectDatabaseStrings, isParityMode, logParityDivergences } from '../ast-detect.js';
 
 function isNonInterpolableConfig(ext: string): boolean {
   return ext === '.json' || ext === '.xml';
@@ -14,6 +15,23 @@ export const databaseStringsRule: Rule = {
   defaultSeverity: 'high',
   filePatterns: ['**/*'],
   detect(file: FileContext, langPatterns: LangPatternSet[]): Finding[] {
+    // AST path for JS/TS source files
+    if (isAstAvailable() && EXT_TO_LANG[file.extension]) {
+      const astResult = astDetectDatabaseStrings(file, langPatterns);
+      if (astResult !== null) {
+        if (isParityMode()) {
+          const regexResult = detectDbStringsRegexPath(file, langPatterns);
+          logParityDivergences('database-strings', file.filePath, astResult, regexResult);
+        }
+        return astResult;
+      }
+    }
+    return detectDbStringsRegexPath(file, langPatterns);
+  },
+};
+
+/** Regex-based database string detection. Extracted for AST parity validation. */
+export function detectDbStringsRegexPath(file: FileContext, langPatterns: LangPatternSet[]): Finding[] {
     const findings: Finding[] = [];
 
     // 1. Universal database URL pattern
@@ -148,5 +166,4 @@ export const databaseStringsRule: Rule = {
     }
 
     return findings;
-  },
-};
+}

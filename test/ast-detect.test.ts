@@ -1,6 +1,12 @@
 import { describe, it, before } from 'node:test';
 import * as assert from 'node:assert/strict';
-import { initAstGrep, isAstAvailable, EXT_TO_LANG, astDetectPorts, astDetectAbsolutePaths, logParityDivergences } from '../src/ast-detect.js';
+import {
+  initAstGrep, isAstAvailable, EXT_TO_LANG,
+  astDetectPorts, astDetectAbsolutePaths,
+  astDetectDatabaseStrings, astDetectPidAndSockets,
+  astDetectLogFilePaths, astDetectTempDirectories,
+  logParityDivergences,
+} from '../src/ast-detect.js';
 import { FileContext, Finding } from '../src/types.js';
 import { getPatternSets } from '../src/lang/index.js';
 
@@ -258,6 +264,237 @@ describe('astDetectAbsolutePaths', () => {
     const findings = astDetectAbsolutePaths(file, nodePatterns);
     assert.ok(findings !== null, 'should return [] not null for parsed files');
     assert.equal(findings!.length, 0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// astDetectDatabaseStrings
+// ---------------------------------------------------------------------------
+
+describe('astDetectDatabaseStrings', () => {
+  it('returns null for non-JS/TS files', () => {
+    const file = makeFile('postgresql://user:pass@localhost/db', 'config.yaml');
+    assert.equal(astDetectDatabaseStrings(file, nodePatterns), null);
+  });
+
+  it('returns empty array for files with no DB patterns', () => {
+    const file = makeFile('const x = "hello world";');
+    const findings = astDetectDatabaseStrings(file, nodePatterns);
+    assert.ok(findings !== null);
+    assert.equal(findings!.length, 0);
+  });
+
+  it('detects postgresql:// URL in string literal', () => {
+    const file = makeFile('const db = "postgresql://user:pass@localhost/mydb";');
+    const findings = astDetectDatabaseStrings(file, nodePatterns)!;
+    assert.ok(findings !== null);
+    assert.ok(findings.length > 0);
+    assert.ok(findings[0].matchedText.includes('postgresql://'));
+    assert.equal(findings[0].category, 'database-string');
+    assert.equal(findings[0].severity, 'critical');
+  });
+
+  it('detects mysql:// URL in template literal', () => {
+    const file = makeFile('const db = `mysql://root@localhost/app`;');
+    const findings = astDetectDatabaseStrings(file, nodePatterns)!;
+    assert.ok(findings !== null);
+    assert.ok(findings.length > 0);
+    assert.ok(findings[0].matchedText.includes('mysql://'));
+  });
+
+  it('detects mongodb+srv:// URL', () => {
+    const file = makeFile('const mongo = "mongodb+srv://user:pass@cluster.example.com/db";');
+    const findings = astDetectDatabaseStrings(file, nodePatterns)!;
+    assert.ok(findings !== null);
+    assert.ok(findings.length > 0);
+    assert.ok(findings[0].matchedText.includes('mongodb+srv://'));
+  });
+
+  it('ignores DB URL in single-line comment', () => {
+    const file = makeFile('// postgresql://user:pass@localhost/mydb');
+    const findings = astDetectDatabaseStrings(file, nodePatterns)!;
+    assert.ok(findings !== null);
+    assert.equal(findings.length, 0, 'should not detect DB URLs in comments');
+  });
+
+  it('ignores DB URL in block comment', () => {
+    const file = makeFile('/* postgresql://user:pass@localhost/mydb */');
+    const findings = astDetectDatabaseStrings(file, nodePatterns)!;
+    assert.ok(findings !== null);
+    assert.equal(findings.length, 0, 'should not detect DB URLs in block comments');
+  });
+
+  it('skips when process.env is used', () => {
+    const file = makeFile('const db = process.env.DATABASE_URL || "postgresql://user:pass@localhost/mydb";');
+    const findings = astDetectDatabaseStrings(file, nodePatterns)!;
+    assert.ok(findings !== null);
+    assert.equal(findings.length, 0, 'should skip env var usage');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// astDetectPidAndSockets
+// ---------------------------------------------------------------------------
+
+describe('astDetectPidAndSockets', () => {
+  it('returns null for non-JS/TS files', () => {
+    const file = makeFile('pidfile: server.pid', 'config.yaml');
+    assert.equal(astDetectPidAndSockets(file, nodePatterns), null);
+  });
+
+  it('returns empty array for files with no PID/socket patterns', () => {
+    const file = makeFile('const x = 42;');
+    const findings = astDetectPidAndSockets(file, nodePatterns);
+    assert.ok(findings !== null);
+    assert.equal(findings!.length, 0);
+  });
+
+  it('detects .pid file path in string literal', () => {
+    const file = makeFile('const pidFile = "tmp/pids/server.pid";');
+    const findings = astDetectPidAndSockets(file, nodePatterns)!;
+    assert.ok(findings !== null);
+    assert.ok(findings.length > 0);
+    assert.ok(findings[0].matchedText.includes('.pid'));
+    assert.equal(findings[0].category, 'pid-socket');
+  });
+
+  it('detects .sock file path in string literal', () => {
+    const file = makeFile('const socket = "/var/run/puma.sock";');
+    const findings = astDetectPidAndSockets(file, nodePatterns)!;
+    assert.ok(findings !== null);
+    assert.ok(findings.length > 0);
+    assert.ok(findings[0].matchedText.includes('.sock'));
+  });
+
+  it('detects .socket variant', () => {
+    const file = makeFile('const s = "app.socket";');
+    const findings = astDetectPidAndSockets(file, nodePatterns)!;
+    assert.ok(findings !== null);
+    assert.ok(findings.length > 0);
+    assert.ok(findings[0].matchedText.includes('.socket'));
+  });
+
+  it('ignores .pid in comment', () => {
+    const file = makeFile('// server.pid is the default PID file');
+    const findings = astDetectPidAndSockets(file, nodePatterns)!;
+    assert.ok(findings !== null);
+    assert.equal(findings.length, 0, 'should not detect PID files in comments');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// astDetectLogFilePaths
+// ---------------------------------------------------------------------------
+
+describe('astDetectLogFilePaths', () => {
+  it('returns null for non-JS/TS files', () => {
+    const file = makeFile('logFile: app.log', 'config.yaml');
+    assert.equal(astDetectLogFilePaths(file, nodePatterns), null);
+  });
+
+  it('returns empty array for files with no log patterns', () => {
+    const file = makeFile('const x = 1;');
+    const findings = astDetectLogFilePaths(file, nodePatterns);
+    assert.ok(findings !== null);
+    assert.equal(findings!.length, 0);
+  });
+
+  it('detects log file path with directory in string', () => {
+    const file = makeFile('const logFile = "logs/app.log";');
+    const findings = astDetectLogFilePaths(file, nodePatterns)!;
+    assert.ok(findings !== null);
+    assert.ok(findings.length > 0, 'should detect log file with path separator');
+    assert.ok(findings[0].matchedText.includes('.log'));
+    assert.equal(findings[0].category, 'log-file-path');
+  });
+
+  it('detects log path with nested directory', () => {
+    const file = makeFile('const log = "/var/log/myapp/error.log";');
+    const findings = astDetectLogFilePaths(file, nodePatterns)!;
+    assert.ok(findings !== null);
+    assert.ok(findings.length > 0);
+  });
+
+  it('detects standalone filename in logFile assignment context', () => {
+    const file = makeFile('const logFile = "error.log";');
+    const findings = astDetectLogFilePaths(file, nodePatterns)!;
+    assert.ok(findings !== null);
+    assert.ok(findings.length > 0, 'should detect .log in logFile assignment context');
+  });
+
+  it('ignores .log in comment', () => {
+    const file = makeFile('// output goes to app.log');
+    const findings = astDetectLogFilePaths(file, nodePatterns)!;
+    assert.ok(findings !== null);
+    assert.equal(findings.length, 0, 'should not detect log files in comments');
+  });
+
+  it('skips env var lines', () => {
+    const file = makeFile('const logPath = process.env.LOG_PATH || "logs/app.log";');
+    const findings = astDetectLogFilePaths(file, nodePatterns)!;
+    assert.ok(findings !== null);
+    assert.equal(findings.length, 0, 'should skip env var usage');
+  });
+
+  it('does not false-positive on console.log', () => {
+    const file = makeFile('console.log("hello world");');
+    const findings = astDetectLogFilePaths(file, nodePatterns)!;
+    assert.ok(findings !== null);
+    assert.equal(findings.length, 0, 'should not flag console.log');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// astDetectTempDirectories
+// ---------------------------------------------------------------------------
+
+describe('astDetectTempDirectories', () => {
+  it('returns null for non-JS/TS files', () => {
+    const file = makeFile('dir: /tmp/myapp', 'config.yaml');
+    assert.equal(astDetectTempDirectories(file, nodePatterns), null);
+  });
+
+  it('returns empty array for files with no temp patterns', () => {
+    const file = makeFile('const x = "hello";');
+    const findings = astDetectTempDirectories(file, nodePatterns);
+    assert.ok(findings !== null);
+    assert.equal(findings!.length, 0);
+  });
+
+  it('detects /tmp/myapp in string literal', () => {
+    const file = makeFile('const dir = "/tmp/myapp";');
+    const findings = astDetectTempDirectories(file, nodePatterns)!;
+    assert.ok(findings !== null);
+    assert.ok(findings.length > 0);
+    assert.equal(findings[0].category, 'temp-directory');
+  });
+
+  it('detects /tmp/cache-data in template literal', () => {
+    const file = makeFile('const d = `/tmp/cache-data`;');
+    const findings = astDetectTempDirectories(file, nodePatterns)!;
+    assert.ok(findings !== null);
+    assert.ok(findings.length > 0);
+  });
+
+  it('ignores /tmp/ in comment', () => {
+    const file = makeFile('// cache stored in /tmp/myapp');
+    const findings = astDetectTempDirectories(file, nodePatterns)!;
+    assert.ok(findings !== null);
+    assert.equal(findings.length, 0, 'should not detect temp dirs in comments');
+  });
+
+  it('detects temp dir config assignment', () => {
+    const file = makeFile('const tmpDir = "/data/temp";');
+    const findings = astDetectTempDirectories(file, nodePatterns)!;
+    assert.ok(findings !== null);
+    assert.ok(findings.length > 0, 'should detect tmpDir assignment');
+  });
+
+  it('detects os.tmpdir() + "/suffix" structural pattern', () => {
+    const file = makeFile('const d = os.tmpdir() + "/myapp";');
+    const findings = astDetectTempDirectories(file, nodePatterns)!;
+    assert.ok(findings !== null);
+    assert.ok(findings.length > 0, 'should detect os.tmpdir() concatenation');
   });
 });
 

@@ -1,6 +1,6 @@
 import type { SgNode, SgRoot } from '@ast-grep/napi';
 import { FileContext, Finding, LangPatternSet } from './types.js';
-import { isLikelyPort, hasPortContext, WELL_KNOWN_SERVICE_PORTS, SAFE_PATH_PREFIXES } from './lang/patterns.js';
+import { isLikelyPort, hasPortContext, WELL_KNOWN_SERVICE_PORTS, SAFE_PATH_PREFIXES, DB_URL_PATTERN } from './lang/patterns.js';
 import { ecosystemForExtension } from './lang/index.js';
 
 // ---------------------------------------------------------------------------
@@ -72,6 +72,22 @@ function parseFile(file: FileContext): SgNode | null {
     _parseCache = null;
     return null;
   }
+}
+
+/** Collect all string-like AST nodes (string literals, template strings, JSX text). */
+function collectStringNodes(root: SgNode): SgNode[] {
+  return [
+    ...root.findAll({ rule: { kind: 'string' } }),
+    ...root.findAll({ rule: { kind: 'template_string' } }),
+    ...root.findAll({ rule: { kind: 'jsx_text' } }),
+  ];
+}
+
+/** Env-var reference check shared across AST detection functions. */
+function lineHasEnvRef(line: string): boolean {
+  return line.includes('process.env') || line.includes('os.environ') ||
+    line.includes('os.Getenv') || line.includes('env::var') ||
+    line.includes('ENV[') || line.includes('${');
 }
 
 // ---------------------------------------------------------------------------
@@ -418,6 +434,485 @@ function suggestRelativePath(absPath: string): string {
     }
   }
   return './' + parts.slice(-3).join('/');
+}
+
+// ---------------------------------------------------------------------------
+// astDetectDatabaseStrings
+// ---------------------------------------------------------------------------
+
+const DB_PROTOCOL_PREFILTER = /(postgresql|postgres|mysql|mongodb|redis|amqp|mssql|sqlite)(?:\+\w+)?:\/\//;
+const DB_KEYWORD_PREFILTER = /database|DATABASE|DB_URL|SQLALCHEMY|connection.?string/i;
+
+/**
+ * AST-based database connection string detection for JS/TS source files.
+ *
+ * Returns:
+ *   Finding[]  — parsed successfully (may be empty → regex is SKIPPED)
+ *   null       — unsupported extension or parse failure → caller falls back to regex
+ */
+export function astDetectDatabaseStrings(
+  file: FileContext,
+  langPatterns: LangPatternSet[],
+): Finding[] | null {
+  if (!isAstAvailable()) return null;
+
+  // Pre-filter: skip parsing if file has no DB-related content
+  if (!DB_PROTOCOL_PREFILTER.test(file.content) && !DB_KEYWORD_PREFILTER.test(file.content)) return [];
+
+  const root = parseFile(file);
+  if (!root) return null;
+
+  const findings: Finding[] = [];
+  const eco = ecosystemForExtension(file.extension);
+  const stringNodes = collectStringNodes(root);
+  const foundLines = new Set<number>();
+
+  // 1. Universal DB URL pattern
+  for (const node of stringNodes) {
+    const text = node.text();
+    const dbUrlRegex = new RegExp(DB_URL_PATTERN.source, DB_URL_PATTERN.flags);
+    let match: RegExpExecArray | null;
+    while ((match = dbUrlRegex.exec(text)) !== null) {
+      const url = match[0];
+      const protocol = match[1];
+      const range = node.range();
+      const lineNum = range.start.line + 1;
+      const lineContent = file.lines[lineNum - 1] ?? '';
+
+      if (lineHasEnvRef(lineContent)) continue;
+      if (foundLines.has(lineNum)) continue;
+      foundLines.add(lineNum);
+
+      const fixTemplate = langPatterns
+        .find(p => p.ecosystem === eco)
+        ?.fixTemplates['database-string'];
+
+      const replacement = fixTemplate
+        ? fixTemplate.envVarPattern.replace('$ORIGINAL', url)
+        : 'process.env.DATABASE_URL';
+      const fixDescription = fixTemplate
+        ? fixTemplate.description
+        : 'Use an environment variable for the database URL';
+
+      findings.push({
+        ruleId: 'database-strings/url',
+        category: 'database-string',
+        severity: 'critical',
+        filePath: file.filePath,
+        line: lineNum,
+        column: range.start.column + 1,
+        matchedText: url,
+        message: `Hardcoded ${protocol} connection string — database name should be per-worktree`,
+        context: lineContent.trim(),
+        ecosystem: eco !== 'unknown' ? eco : undefined,
+        suggestedFix: {
+          description: fixDescription,
+          replacement,
+          confidence: 'review',
+          docUrl: 'https://isolint.dev/docs/rules/database-strings',
+        },
+      });
+    }
+  }
+
+  // 2. Ecosystem-specific DB patterns
+  for (const ps of langPatterns) {
+    if (!ps.sourceExtensions.includes(file.extension) && ps.ecosystem !== eco) continue;
+
+    for (const patDef of ps.dbStringPatterns) {
+      for (const node of stringNodes) {
+        const text = node.text();
+        const regex = new RegExp(patDef.pattern.source, patDef.pattern.flags);
+        let match: RegExpExecArray | null;
+        while ((match = regex.exec(text)) !== null) {
+          const range = node.range();
+          const lineNum = range.start.line + 1;
+          const lineContent = file.lines[lineNum - 1] ?? '';
+
+          if (foundLines.has(lineNum)) continue;
+          if (lineHasEnvRef(lineContent)) continue;
+          foundLines.add(lineNum);
+
+          const displayText = match[1] ?? match[0];
+          const ecoFixTemplate = ps.fixTemplates['database-string'];
+
+          findings.push({
+            ruleId: `database-strings/${ps.ecosystem}`,
+            category: 'database-string',
+            severity: 'high',
+            filePath: file.filePath,
+            line: lineNum,
+            column: range.start.column + 1,
+            matchedText: displayText,
+            message: patDef.description,
+            context: lineContent.trim(),
+            ecosystem: ps.ecosystem,
+            suggestedFix: {
+              description: ecoFixTemplate?.description || 'Use an environment variable for the database connection string',
+              replacement: ecoFixTemplate
+                ? ecoFixTemplate.envVarPattern.replace('$ORIGINAL', displayText)
+                : 'process.env.DATABASE_URL',
+              confidence: 'review',
+              docUrl: 'https://isolint.dev/docs/rules/database-strings',
+            },
+          });
+        }
+      }
+    }
+  }
+
+  return findings;
+}
+
+// ---------------------------------------------------------------------------
+// astDetectPidAndSockets
+// ---------------------------------------------------------------------------
+
+const PID_SOCK_PREFILTER = /\.pid|\.sock|pidfile|pid_file/i;
+const PID_SOCK_RE = /[^\s"']*\.(?:pid|sock(?:et)?)\b/;
+
+/**
+ * AST-based PID file and socket path detection for JS/TS source files.
+ *
+ * Returns:
+ *   Finding[]  — parsed successfully (may be empty → regex is SKIPPED)
+ *   null       — unsupported extension or parse failure → caller falls back to regex
+ */
+export function astDetectPidAndSockets(
+  file: FileContext,
+  langPatterns: LangPatternSet[],
+): Finding[] | null {
+  if (!isAstAvailable()) return null;
+
+  if (!PID_SOCK_PREFILTER.test(file.content)) return [];
+
+  const root = parseFile(file);
+  if (!root) return null;
+
+  const findings: Finding[] = [];
+  const eco = ecosystemForExtension(file.extension);
+  const stringNodes = collectStringNodes(root);
+  const foundLines = new Set<number>();
+
+  // 1. Ecosystem-specific PID/socket patterns
+  for (const ps of langPatterns) {
+    for (const patDef of ps.pidSocketPatterns) {
+      for (const node of stringNodes) {
+        const text = node.text();
+        const regex = new RegExp(patDef.pattern.source, patDef.pattern.flags);
+        if (!regex.test(text)) continue;
+
+        const range = node.range();
+        const lineNum = range.start.line + 1;
+        if (foundLines.has(lineNum)) continue;
+        foundLines.add(lineNum);
+
+        const lineContent = file.lines[lineNum - 1] ?? '';
+        findings.push({
+          ruleId: `pid-and-sockets/${ps.ecosystem}`,
+          category: 'pid-socket',
+          severity: 'high',
+          filePath: file.filePath,
+          line: lineNum,
+          column: range.start.column + 1,
+          matchedText: text,
+          message: `${patDef.description}: ${text}`,
+          context: lineContent.trim(),
+          ecosystem: ps.ecosystem,
+          suggestedFix: {
+            description: 'Each worktree needs its own PID/socket file, otherwise only one instance can run at a time',
+            replacement: text,
+            confidence: 'manual',
+            howToApply: 'Include the worktree name in the PID/socket file path to make it unique (e.g., server.<worktree>.pid or puma.<worktree>.sock)',
+            docUrl: 'https://isolint.dev/docs/rules/pid-and-sockets',
+          },
+        });
+      }
+    }
+  }
+
+  // 2. Universal: string nodes containing .pid or .sock paths
+  for (const node of stringNodes) {
+    const text = node.text();
+    const match = PID_SOCK_RE.exec(text);
+    if (!match) continue;
+
+    const range = node.range();
+    const lineNum = range.start.line + 1;
+    if (foundLines.has(lineNum)) continue;
+    foundLines.add(lineNum);
+
+    const lineContent = file.lines[lineNum - 1] ?? '';
+    const matchedPath = match[0];
+
+    findings.push({
+      ruleId: 'pid-and-sockets/config',
+      category: 'pid-socket',
+      severity: 'high',
+      filePath: file.filePath,
+      line: lineNum,
+      column: range.start.column + 1,
+      matchedText: matchedPath,
+      message: `Hardcoded PID/socket file path: ${matchedPath}`,
+      context: lineContent.trim(),
+      ecosystem: eco !== 'unknown' ? eco : undefined,
+      suggestedFix: {
+        description: 'Each worktree needs its own PID/socket file — two servers can\'t write to the same one',
+        replacement: matchedPath,
+        confidence: 'manual',
+        howToApply: 'Include the worktree name in the PID/socket file path to make it unique (e.g., server.<worktree>.pid)',
+        docUrl: 'https://isolint.dev/docs/rules/pid-and-sockets',
+      },
+    });
+  }
+
+  return findings;
+}
+
+// ---------------------------------------------------------------------------
+// astDetectLogFilePaths
+// ---------------------------------------------------------------------------
+
+const LOG_PREFILTER = /\.log\b/i;
+const LOG_CONFIG_CONTEXT = /(?:logFile|log_file|logPath|log_path)\s*[:=]/i;
+
+/**
+ * AST-based log file path detection for JS/TS source files.
+ *
+ * Returns:
+ *   Finding[]  — parsed successfully (may be empty → regex is SKIPPED)
+ *   null       — unsupported extension or parse failure → caller falls back to regex
+ */
+export function astDetectLogFilePaths(
+  file: FileContext,
+  langPatterns: LangPatternSet[],
+): Finding[] | null {
+  if (!isAstAvailable()) return null;
+
+  if (!LOG_PREFILTER.test(file.content)) return [];
+
+  const root = parseFile(file);
+  if (!root) return null;
+
+  const findings: Finding[] = [];
+  const eco = ecosystemForExtension(file.extension);
+  const stringNodes = collectStringNodes(root);
+  const foundLines = new Set<number>();
+
+  // 1. Universal: string nodes containing .log file paths
+  for (const node of stringNodes) {
+    const text = node.text();
+    if (!/\.log\b/.test(text)) continue;
+
+    // Require either a path separator (real file path) or log assignment context
+    const hasPathSep = text.includes('/') || text.includes('\\');
+    const range = node.range();
+    const lineNum = range.start.line + 1;
+    const lineContent = file.lines[lineNum - 1] ?? '';
+    const hasLogContext = LOG_CONFIG_CONTEXT.test(lineContent);
+
+    if (!hasPathSep && !hasLogContext) continue;
+
+    if (lineHasEnvRef(lineContent)) continue;
+    if (foundLines.has(lineNum)) continue;
+    foundLines.add(lineNum);
+
+    // Extract the log path from the string
+    const logPathMatch = text.match(/[\w./-]+\.log\b/);
+    const logPath = logPathMatch ? logPathMatch[0] : text;
+
+    findings.push({
+      ruleId: 'log-file-paths/hardcoded',
+      category: 'log-file-path',
+      severity: 'low',
+      filePath: file.filePath,
+      line: lineNum,
+      column: range.start.column + 1,
+      matchedText: logPath,
+      message: `Hardcoded log file path: ${logPath}`,
+      context: lineContent.trim(),
+      ecosystem: eco !== 'unknown' ? eco : undefined,
+      suggestedFix: {
+        description: 'Parallel worktrees writing to the same log file will interleave output',
+        replacement: logPath,
+        confidence: 'manual',
+        howToApply: 'Include the worktree name in the log file path so each worktree writes to a separate file (e.g., app.<worktree>.log)',
+        docUrl: 'https://isolint.dev/docs/rules/log-file-paths',
+      },
+    });
+  }
+
+  // 2. Ecosystem-specific log patterns
+  for (const ps of langPatterns) {
+    for (const patDef of ps.logPathPatterns) {
+      for (const node of stringNodes) {
+        const text = node.text();
+        const regex = new RegExp(patDef.pattern.source, patDef.pattern.flags);
+        if (!regex.test(text)) continue;
+
+        const range = node.range();
+        const lineNum = range.start.line + 1;
+        if (foundLines.has(lineNum)) continue;
+
+        const lineContent = file.lines[lineNum - 1] ?? '';
+        foundLines.add(lineNum);
+
+        findings.push({
+          ruleId: `log-file-paths/${ps.ecosystem}`,
+          category: 'log-file-path',
+          severity: 'low',
+          filePath: file.filePath,
+          line: lineNum,
+          column: range.start.column + 1,
+          matchedText: text,
+          message: patDef.description,
+          context: lineContent.trim(),
+          ecosystem: ps.ecosystem,
+          suggestedFix: {
+            description: 'Parallel worktrees writing to the same log file will interleave output',
+            replacement: text,
+            confidence: 'manual',
+            howToApply: 'Include the worktree name in the log file path so each worktree writes to a separate file',
+            docUrl: 'https://isolint.dev/docs/rules/log-file-paths',
+          },
+        });
+      }
+    }
+  }
+
+  return findings;
+}
+
+// ---------------------------------------------------------------------------
+// astDetectTempDirectories
+// ---------------------------------------------------------------------------
+
+const TEMP_PREFILTER = /\/tmp\/|tmpDir|temp_dir|tmpdir|mkdtemp/i;
+const TMP_DIR_RE = /\/tmp\/([a-zA-Z][\w-]+)/;
+const TEMP_CONFIG_CONTEXT = /(?:tmpDir|temp_dir|tempDir|tmp_dir)\s*[:=]/i;
+
+/**
+ * AST-based temp directory detection for JS/TS source files.
+ *
+ * Returns:
+ *   Finding[]  — parsed successfully (may be empty → regex is SKIPPED)
+ *   null       — unsupported extension or parse failure → caller falls back to regex
+ */
+export function astDetectTempDirectories(
+  file: FileContext,
+  langPatterns: LangPatternSet[],
+): Finding[] | null {
+  if (!isAstAvailable()) return null;
+
+  if (!TEMP_PREFILTER.test(file.content)) return [];
+
+  const root = parseFile(file);
+  if (!root) return null;
+
+  const findings: Finding[] = [];
+  const stringNodes = collectStringNodes(root);
+  const foundLines = new Set<number>();
+
+  // 1. String nodes containing /tmp/name
+  for (const node of stringNodes) {
+    const text = node.text();
+    const match = TMP_DIR_RE.exec(text);
+    if (!match) continue;
+
+    const range = node.range();
+    const lineNum = range.start.line + 1;
+    if (foundLines.has(lineNum)) continue;
+    foundLines.add(lineNum);
+
+    const lineContent = file.lines[lineNum - 1] ?? '';
+    findings.push({
+      ruleId: 'temp-directories/hardcoded',
+      category: 'temp-directory',
+      severity: 'low',
+      filePath: file.filePath,
+      line: lineNum,
+      column: range.start.column + 1,
+      matchedText: text,
+      message: `Hardcoded /tmp subdirectory: ${match[1]}`,
+      context: lineContent.trim(),
+      suggestedFix: {
+        description: 'Two worktrees using the same temp dir will overwrite each other\'s files',
+        replacement: text,
+        confidence: 'manual',
+        howToApply: 'Include the worktree name in the temp directory path so each worktree uses a separate location',
+        docUrl: 'https://isolint.dev/docs/rules/temp-directories',
+      },
+    });
+  }
+
+  // 2. Config assignments: tmpDir = "..." (check string nodes with assignment context)
+  for (const node of stringNodes) {
+    const range = node.range();
+    const lineNum = range.start.line + 1;
+    if (foundLines.has(lineNum)) continue;
+
+    const lineContent = file.lines[lineNum - 1] ?? '';
+    if (!TEMP_CONFIG_CONTEXT.test(lineContent)) continue;
+
+    const text = node.text();
+    foundLines.add(lineNum);
+
+    findings.push({
+      ruleId: 'temp-directories/hardcoded',
+      category: 'temp-directory',
+      severity: 'low',
+      filePath: file.filePath,
+      line: lineNum,
+      column: range.start.column + 1,
+      matchedText: text,
+      message: `Hardcoded temp directory config: ${text}`,
+      context: lineContent.trim(),
+      suggestedFix: {
+        description: 'Two worktrees using the same temp dir will overwrite each other\'s files',
+        replacement: text,
+        confidence: 'manual',
+        howToApply: 'Include the worktree name in the temp directory path so each worktree uses a separate location',
+        docUrl: 'https://isolint.dev/docs/rules/temp-directories',
+      },
+    });
+  }
+
+  // 3. Structural match: os.tmpdir() + "/suffix"
+  try {
+    const tmpdirConcat = root.findAll({ rule: { pattern: 'os.tmpdir() + $SUFFIX' } });
+    for (const node of tmpdirConcat) {
+      const range = node.range();
+      const lineNum = range.start.line + 1;
+      if (foundLines.has(lineNum)) continue;
+      foundLines.add(lineNum);
+
+      const suffix = node.getMatch('SUFFIX');
+      const lineContent = file.lines[lineNum - 1] ?? '';
+
+      findings.push({
+        ruleId: 'temp-directories/hardcoded',
+        category: 'temp-directory',
+        severity: 'low',
+        filePath: file.filePath,
+        line: lineNum,
+        column: range.start.column + 1,
+        matchedText: node.text(),
+        message: `os.tmpdir() with hardcoded subdirectory name: ${suffix?.text() ?? ''}`,
+        context: lineContent.trim(),
+        suggestedFix: {
+          description: 'Two worktrees using the same temp dir will overwrite each other\'s files',
+          replacement: node.text(),
+          confidence: 'manual',
+          howToApply: 'Include the worktree name in the temp directory path so each worktree uses a separate location',
+          docUrl: 'https://isolint.dev/docs/rules/temp-directories',
+        },
+      });
+    }
+  } catch {
+    // structural pattern match can fail on unusual AST shapes — not fatal
+  }
+
+  return findings;
 }
 
 // ---------------------------------------------------------------------------

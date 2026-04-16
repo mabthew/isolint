@@ -1,4 +1,5 @@
 import { Rule, Finding, FileContext, LangPatternSet, lineNumberAt } from '../types.js';
+import { isAstAvailable, EXT_TO_LANG, astDetectTempDirectories, isParityMode, logParityDivergences } from '../ast-detect.js';
 
 /** Patterns for hardcoded temp directory usage. */
 const TEMP_DIR_PATTERNS = [
@@ -15,7 +16,24 @@ export const tempDirectoriesRule: Rule = {
   description: 'Detects hardcoded temp directory paths that may collide across worktrees',
   defaultSeverity: 'low',
   filePatterns: ['**/*'],
-  detect(file: FileContext, _langPatterns: LangPatternSet[]): Finding[] {
+  detect(file: FileContext, langPatterns: LangPatternSet[]): Finding[] {
+    // AST path for JS/TS source files
+    if (isAstAvailable() && EXT_TO_LANG[file.extension]) {
+      const astResult = astDetectTempDirectories(file, langPatterns);
+      if (astResult !== null) {
+        if (isParityMode()) {
+          const regexResult = detectTempDirsRegexPath(file);
+          logParityDivergences('temp-directories', file.filePath, astResult, regexResult);
+        }
+        return astResult;
+      }
+    }
+    return detectTempDirsRegexPath(file);
+  },
+};
+
+/** Regex-based temp directory detection. Extracted for AST parity validation. */
+export function detectTempDirsRegexPath(file: FileContext): Finding[] {
     const findings: Finding[] = [];
 
     for (const { regex, desc } of TEMP_DIR_PATTERNS) {
@@ -59,5 +77,4 @@ export const tempDirectoriesRule: Rule = {
     }
 
     return findings;
-  },
-};
+}
