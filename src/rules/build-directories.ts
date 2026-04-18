@@ -1,10 +1,11 @@
 import { Rule, Finding, FileContext, LangPatternSet, lineNumberAt } from '../types.js';
 
-/** Patterns for build output directory configuration. */
+/** Patterns for build output directory configuration.
+ *  The optional `"?` after the key name lets us match both JS-style (`outDir: 'x'`)
+ *  and JSON-style (`"outDir": "x"`) keys. */
 const BUILD_DIR_CONFIG_PATTERNS = [
-  // Only match quoted string values or simple unquoted paths (not function calls like path.join)
-  { regex: /(?:outDir|distDir|outputDir|buildDir|out_dir|build_dir)\s*[:=]\s*["']([^"']+)["']/gi, desc: 'Build output directory' },
-  { regex: /(?:outputDirectory|publishDir|publish_dir)\s*[:=]\s*["']([^"']+)["']/gi, desc: 'Publish directory' },
+  { regex: /(?:outDir|distDir|outputDir|buildDir|out_dir|build_dir)"?\s*[:=]\s*["']([^"']+)["']/gi, desc: 'Build output directory' },
+  { regex: /(?:outputDirectory|publishDir|publish_dir)"?\s*[:=]\s*["']([^"']+)["']/gi, desc: 'Publish directory' },
 ];
 
 export const buildDirectoriesRule: Rule = {

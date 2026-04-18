@@ -53,7 +53,7 @@ export async function runAudit(config: AuditConfig): Promise<AuditReport> {
   let filesScanned = 0;
 
   for (const filePath of filePaths) {
-    const fileCtx = readFileContext(filePath, config.rootDir);
+    const fileCtx = readFileContext(filePath, config.rootDir, config.maxFileSize);
     if (!fileCtx) continue;
     filesScanned++;
 
@@ -181,19 +181,32 @@ const IGNORE_PATTERNS = [
  *   // iso-ignore                           (short form)
  *   // pda-ignore, wta-ignore               (legacy aliases)
  */
+// Match a directive only when it's not followed by another word char or hyphen,
+// so `isolint-ignore-for-now` does NOT trigger the bare `isolint-ignore` directive.
+function findDirective(line: string, pattern: string): number {
+  let from = 0;
+  while (true) {
+    const idx = line.indexOf(pattern, from);
+    if (idx === -1) return -1;
+    const next = line.charAt(idx + pattern.length);
+    if (next === '' || !/[-\w]/.test(next)) return idx;
+    from = idx + 1;
+  }
+}
+
 function getIgnoredLines(lines: string[]): Set<number> {
   const ignored = new Set<number>();
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
     for (const pattern of IGNORE_PATTERNS) {
-      if (line.includes(pattern)) {
+      const commentStart = findDirective(line, pattern);
+      if (commentStart >= 0) {
         if (pattern.includes('next-line')) {
           // Always ignore the next line
           ignored.add(i + 2); // 1-based
         } else {
           // If the comment is the entire line (no code before it), ignore next line
           // If it's inline after code, ignore this line
-          const commentStart = line.indexOf(pattern);
           const beforeComment = line.slice(0, commentStart).replace(/\/\/\s*$/, '').replace(/#\s*$/, '').trim();
           if (beforeComment.length === 0) {
             ignored.add(i + 2); // standalone comment → skip next line

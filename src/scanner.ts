@@ -196,7 +196,11 @@ export async function discoverFiles(config: AuditConfig): Promise<string[]> {
 }
 
 /** Read and parse a file into a FileContext. */
-export function readFileContext(filePath: string, rootDir: string): FileContext | null {
+export function readFileContext(
+  filePath: string,
+  rootDir: string,
+  maxFileSize: number = 1_048_576,
+): FileContext | null {
   const absolutePath = path.resolve(path.join(rootDir, filePath));
 
   // Guard against path traversal (e.g. filePath = "../../etc/passwd")
@@ -205,7 +209,7 @@ export function readFileContext(filePath: string, rootDir: string): FileContext 
   let content: string;
   try {
     const stat = fs.statSync(absolutePath);
-    if (stat.size > 1_048_576) return null; // Skip files > 1MB
+    if (stat.size > maxFileSize) return null;
     content = fs.readFileSync(absolutePath, 'utf-8');
   } catch {
     return null;
