@@ -1,4 +1,5 @@
 import { Command } from 'commander';
+import * as fs from 'fs';
 import * as path from 'path';
 import { AuditConfig, Category, Severity } from './types.js';
 import { runAudit, SEVERITY_ORDER } from './engine.js';
@@ -44,6 +45,15 @@ export function createCli(): Command {
       if (opts.init) {
         console.log(initConfig(rootDir));
         return;
+      }
+
+      if (!fs.existsSync(rootDir)) {
+        console.error(`Error: path does not exist: ${rootDir}`);
+        process.exit(2);
+      }
+      if (!fs.statSync(rootDir).isDirectory()) {
+        console.error(`Error: path is not a directory: ${rootDir}`);
+        process.exit(2);
       }
 
       // Validate options
@@ -156,6 +166,11 @@ export function createCli(): Command {
         const rawName = path.basename(rootDir);
         const name = rawName.replace(/[-_](?:test\d*|clone\d*|tmp|audit)$/i, '');
         process.stderr.write(`Scanning ${name}...`);
+
+        if (!fs.existsSync(rootDir) || !fs.statSync(rootDir).isDirectory()) {
+          process.stderr.write(` ERROR: path does not exist or is not a directory\n`);
+          continue;
+        }
 
         const config = loadConfig(rootDir, {
           severityFilter: opts.severity as Severity | undefined,
